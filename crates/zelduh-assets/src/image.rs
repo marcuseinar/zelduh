@@ -102,15 +102,20 @@ pub fn tiles_from_image(img: &Image) -> (Vec<Tile8>, Palette) {
         }
     }
     let mut colors = [0 as Rgb; 4];
-    for i in 0..4 {
-        colors[i] = if counts[i] == 0 {
-            let v = (i as u32 * 85) & 0xff;
-            (v << 16) | (v << 8) | v
-        } else {
-            let r = (sums[i][0] / counts[i]) as u32;
-            let g = (sums[i][1] / counts[i]) as u32;
-            let b = (sums[i][2] / counts[i]) as u32;
-            (r << 16) | (g << 8) | b
+    for (i, color) in colors.iter_mut().enumerate() {
+        *color = match counts[i] {
+            // A level no pixel landed in still needs a colour, so spread the
+            // unused ones evenly along the greys.
+            0 => {
+                let v = (i as u32 * 85) & 0xff;
+                (v << 16) | (v << 8) | v
+            }
+            n => {
+                let r = (sums[i][0] / n) as u32;
+                let g = (sums[i][1] / n) as u32;
+                let b = (sums[i][2] / n) as u32;
+                (r << 16) | (g << 8) | b
+            }
         };
     }
 

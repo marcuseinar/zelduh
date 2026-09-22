@@ -288,10 +288,8 @@ fn read_loop(
                     s.send_to(slot, &reply);
                 }
             }
-            c2s::ROLE if payload.len() >= 2 => {
-                if payload[1] == 1 {
-                    lock(session).request_boss(slot);
-                }
+            c2s::ROLE if payload.len() >= 2 && payload[1] == 1 => {
+                lock(session).request_boss(slot);
             }
             _ => {}
         }
