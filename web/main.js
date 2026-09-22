@@ -56,12 +56,17 @@ const dom = {
   server: document.getElementById('server'),
   stage: document.getElementById('stage'),
   play: document.getElementById('play'),
-  pad: document.getElementById('pad'),
-  padKnob: document.querySelector('.pad-knob'),
-  padWrap: document.getElementById('pad-wrap'),
-  faceWrap: document.getElementById('face-wrap'),
+  panel: document.getElementById('panel'),
+  touchUi: document.getElementById('touch-ui'),
+  stickZone: document.getElementById('stick-zone'),
+  menu: document.getElementById('menu'),
+  closePanel: document.getElementById('close-panel'),
+  scrim: document.getElementById('sheet-scrim'),
   fullscreen: document.getElementById('fullscreen'),
 };
+
+/** True on a device driven by a thumb rather than a mouse. */
+const TOUCH = matchMedia('(pointer: coarse)').matches;
 
 const ctx = dom.canvas.getContext('2d', { alpha: false });
 ctx.imageSmoothingEnabled = false;
@@ -247,22 +252,22 @@ window.addEventListener('blur', () => { held = 0; });
 
 // ------------------------------------------------------------ touch controls
 
-// How far from the middle of the pad counts as a deliberate push, as a
-// fraction of its radius. Below this the hero stands still.
-const PAD_DEADZONE = 0.3;
-// A direction is included when the thumb is within this many degrees of it,
+// How hard the stick has to be pushed before it counts, as a fraction of its
+// radius. Below this the hero stands still.
+const STICK_DEADZONE = 0.35;
+// A direction is included when the stick is within this many degrees of it,
 // which leaves a generous wedge for each diagonal.
-const PAD_SPREAD = 67.5;
+const STICK_SPREAD = 67.5;
 
-/** Turns a thumb position on the pad into a set of direction bits. */
-function padDirections(dx, dy, radius) {
-  const distance = Math.hypot(dx, dy);
-  if (distance < radius * PAD_DEADZONE) return 0;
-  // Screen coordinates run down the page, so negate y to get a normal angle.
-  const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
+/** Turns a stick vector into a set of direction bits. */
+function stickDirections(vx, vy, force) {
+  if (force < STICK_DEADZONE) return 0;
+  // nipplejs hands back a vector with y pointing up, which is already the
+  // convention for an angle in degrees.
+  const angle = (Math.atan2(vy, vx) * 180) / Math.PI;
   const near = (target) => {
     const diff = Math.abs(((angle - target + 540) % 360) - 180);
-    return diff <= PAD_SPREAD;
+    return diff <= STICK_SPREAD;
   };
   let mask = 0;
   if (near(90)) mask |= BUTTON.up;
@@ -272,47 +277,43 @@ function padDirections(dx, dy, radius) {
   return mask;
 }
 
-/** Moves the pad's knob to follow the thumb. */
-function moveKnob(dx, dy, radius) {
-  const distance = Math.hypot(dx, dy);
-  const limit = radius * 0.55;
-  const scale = distance > limit ? limit / distance : 1;
-  dom.padKnob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+/**
+ * The movement stick, drawn wherever the thumb lands.
+ *
+ * nipplejs in `dynamic` mode is exactly the pattern every touch game uses:
+ * no fixed pad to hunt for, the stick simply appears under the thumb and
+ * recentres itself on every touch.
+ */
+function setupStick() {
+  if (!window.nipplejs) return;
+  const stick = nipplejs.create({
+    zone: dom.stickZone,
+    mode: 'dynamic',
+    color: 'rgba(127, 208, 74, 0.85)',
+    size: 120,
+    fadeTime: 80,
+    restOpacity: 0.65,
+    // One thumb, one stick: a second finger in this half must not make
+    // another one and fight the first for the d-pad bits.
+    maxNumberOfNipples: 1,
+    // The zone lives inside a fixed, full-screen layout, so nipplejs has to
+    // place the stick from viewport coordinates rather than page ones.
+    dynamicPage: true,
+  });
+  stick.on('start', () => audio.unlock());
+  stick.on('move', (_event, data) => {
+    if (!data || !data.vector) return;
+    // Replace the whole d-pad at once so opposite directions cannot stick.
+    held = (held & ~BUTTON.DPAD_ALL) | stickDirections(data.vector.x, data.vector.y, data.force);
+  });
+  stick.on('end', () => { held &= ~BUTTON.DPAD_ALL; });
+  return stick;
 }
 
 function setupTouchControls() {
-  let padPointer = null;
-
-  const trackPad = (e) => {
-    const rect = dom.pad.getBoundingClientRect();
-    const radius = rect.width / 2;
-    const dx = e.clientX - (rect.left + radius);
-    const dy = e.clientY - (rect.top + rect.height / 2);
-    // Replace the whole d-pad at once so opposite directions cannot stick.
-    held = (held & ~BUTTON.DPAD_ALL) | padDirections(dx, dy, radius);
-    moveKnob(dx, dy, radius);
-  };
-
-  dom.pad.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    audio.unlock();
-    padPointer = e.pointerId;
-    dom.pad.setPointerCapture(e.pointerId);
-    dom.pad.classList.add('active');
-    trackPad(e);
-  });
-  dom.pad.addEventListener('pointermove', (e) => {
-    if (e.pointerId === padPointer) trackPad(e);
-  });
-  const releasePad = (e) => {
-    if (e.pointerId !== padPointer) return;
-    padPointer = null;
-    held &= ~BUTTON.DPAD_ALL;
-    dom.pad.classList.remove('active');
-    dom.padKnob.style.transform = '';
-  };
-  dom.pad.addEventListener('pointerup', releasePad);
-  dom.pad.addEventListener('pointercancel', releasePad);
+  dom.touchUi.hidden = false;
+  document.body.classList.add('touch');
+  setupStick();
 
   for (const el of document.querySelectorAll('[data-button]')) {
     const name = el.dataset.button;
@@ -333,11 +334,32 @@ function setupTouchControls() {
   }
 
   // A second tap in quick succession would otherwise zoom the page.
-  for (const el of [dom.pad, dom.stage, ...document.querySelectorAll('[data-button]')]) {
+  for (const el of [dom.stickZone, dom.stage, ...document.querySelectorAll('[data-button]')]) {
     el.addEventListener('dblclick', (e) => e.preventDefault());
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
+
+  // Belt and braces for the page lock: iOS still rubber-bands a fixed body
+  // when a gesture starts on an element that is not itself scrollable.
+  document.addEventListener('touchmove', (e) => {
+    if (e.cancelable && !e.target.closest('#panel')) e.preventDefault();
+  }, { passive: false });
 }
+
+// ------------------------------------------------------------ settings sheet
+
+function showPanel(open) {
+  dom.panel.classList.toggle('open', open);
+  dom.scrim.hidden = !open;
+  requestAnimationFrame(applyScale);
+}
+
+dom.menu.addEventListener('click', () => {
+  audio.unlock();
+  showPanel(!dom.panel.classList.contains('open'));
+});
+dom.closePanel.addEventListener('click', () => showPanel(false));
+dom.scrim.addEventListener('click', () => showPanel(false));
 
 dom.fullscreen.addEventListener('click', async () => {
   audio.unlock();
@@ -499,29 +521,26 @@ function fitCanvas() {
   dom.canvas.style.width = '0px';
   dom.canvas.style.height = '0px';
 
-  // Which way the controls are laid out. This mirrors the same test in the
-  // stylesheet, which is what decides the layout.
-  const sideBySide = matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
-  const pad = dom.padWrap.getBoundingClientRect();
-  const face = dom.faceWrap.getBoundingClientRect();
-
   // Measure the container rather than the screen's own frame: with the canvas
   // collapsed the frame has shrunk to nothing and would report no room at all.
-  const gap = parseFloat(getComputedStyle(dom.play).columnGap) || 0;
   const frame = getComputedStyle(dom.stage);
-  const border =
-    parseFloat(frame.paddingLeft) +
-    parseFloat(frame.paddingRight) +
-    parseFloat(frame.borderLeftWidth) +
-    parseFloat(frame.borderRightWidth);
-  let availableWidth = dom.play.clientWidth - border;
-  if (sideBySide) availableWidth -= pad.width + face.width + gap * 2;
+  const sides = (a, b) =>
+    parseFloat(frame[`padding${a}`]) + parseFloat(frame[`padding${b}`]) +
+    parseFloat(frame[`border${a}Width`]) + parseFloat(frame[`border${b}Width`]);
 
-  // The container's top, not the screen frame's: with the canvas collapsed the
-  // frame is centred in its row and reports a position it will not keep.
-  const top = dom.play.getBoundingClientRect().top;
-  const below = sideBySide ? 0 : pad.height + 24;
-  const availableHeight = window.innerHeight - top - below - 16;
+  let availableWidth;
+  let availableHeight;
+  if (TOUCH) {
+    // The controls float over the picture, so the screen gets the whole page.
+    availableWidth = dom.play.clientWidth - sides('Left', 'Right');
+    availableHeight = dom.play.clientHeight - sides('Top', 'Bottom');
+  } else {
+    availableWidth = dom.play.clientWidth - sides('Left', 'Right');
+    // The container's top, not the screen frame's: with the canvas collapsed
+    // the frame is centred in its row and reports a position it will not keep.
+    const top = dom.play.getBoundingClientRect().top;
+    availableHeight = window.innerHeight - top - sides('Top', 'Bottom') - 16;
+  }
 
   const scale = Math.max(
     1,
@@ -533,6 +552,7 @@ function fitCanvas() {
 
 dom.scale.addEventListener('input', applyScale);
 window.addEventListener('resize', () => requestAnimationFrame(applyScale));
+visualViewport?.addEventListener('resize', () => requestAnimationFrame(applyScale));
 window.addEventListener('orientationchange', () => {
   // The new viewport size is not known until after the rotation settles.
   setTimeout(applyScale, 250);
@@ -557,7 +577,7 @@ dom.canvas.addEventListener('pointerdown', () => {
   if (paused) setPaused(false);
 });
 
-// ----------------------------------------------------------------网 network
+// ----------------------------------------------------------------- network
 
 // Message ids, matching the server's `s2c` and `c2s` modules.
 const S2C = { WELCOME: 1, FRAME: 2, DESYNC: 3, INFO: 4 };
@@ -851,13 +871,13 @@ async function main() {
   try {
     const saved = localStorage.getItem('zelduh.scale');
     // Default to filling the screen on a touch device, 3x on a desktop.
-    dom.scale.value = saved ?? (matchMedia('(pointer: coarse)').matches ? '0' : '3');
+    dom.scale.value = saved ?? (TOUCH ? '0' : '3');
     const server = localStorage.getItem('zelduh.server');
     if (server) dom.server.value = server;
   } catch {
-    dom.scale.value = matchMedia('(pointer: coarse)').matches ? '0' : '3';
+    dom.scale.value = TOUCH ? '0' : '3';
   }
-  setupTouchControls();
+  if (TOUCH) setupTouchControls();
   applyScale();
   // Two frames later the layout has settled, including any late web font.
   requestAnimationFrame(() => requestAnimationFrame(applyScale));

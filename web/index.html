@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#12131a">
 <meta name="description" content="A randomly generated multiplayer top-down adventure in the shape of the Game Boy Zeldas, written in Rust and compiled to WebAssembly.">
@@ -29,26 +29,30 @@
       <div id="overlay" hidden><p id="overlay-text"></p></div>
     </div>
 
-    <div id="pad-wrap" class="control-side">
-      <div id="pad" role="application" aria-label="Movement pad">
-        <span class="pad-ring" aria-hidden="true"></span>
-        <span class="pad-knob" aria-hidden="true"></span>
-      </div>
-    </div>
+    <!-- Touch controls, laid over the screen. Shown only on a touch device. -->
+    <div id="touch-ui" hidden>
+      <!-- The stick has no fixed home: it appears under whichever thumb
+           lands here first, anywhere in this half of the screen. -->
+      <div id="stick-zone" role="application" aria-label="Movement stick"></div>
 
-    <div id="face-wrap" class="control-side">
-      <div id="face">
-        <button class="round b" data-button="b" aria-label="B button">B</button>
-        <button class="round a" data-button="a" aria-label="A button">A</button>
+      <div id="face-wrap">
+        <button class="tiny" data-button="start" aria-label="Swap item">SWAP</button>
+        <div id="face">
+          <button class="round b" data-button="b" aria-label="B button">B</button>
+          <button class="round a" data-button="a" aria-label="A button">A</button>
+        </div>
       </div>
-      <div id="minor">
-        <button class="tiny" data-button="start">SWAP</button>
-        <button class="tiny" id="fullscreen">FULL</button>
+
+      <div id="top-bar">
+        <button class="tiny" id="menu" aria-label="Settings">MENU</button>
+        <button class="tiny" id="fullscreen" aria-label="Fullscreen">FULL</button>
       </div>
     </div>
   </div>
 
   <section id="panel">
+    <button class="tiny sheet-close" id="close-panel" aria-label="Close settings">DONE</button>
+
     <details id="settings" open>
       <summary>World</summary>
       <div class="row">
@@ -81,9 +85,7 @@
       </div>
       <p id="net-status">Playing on your own.</p>
       <p class="note">Up to four players share one world, and one of them can take over a dungeon
-         boss and hunt the others. It needs somewhere to run <code>zelduh-server</code>: a page
-         served from static hosting has nothing to connect to, so put its address in the box
-         above.</p>
+         boss and hunt the others.</p>
     </details>
 
     <details>
@@ -105,7 +107,7 @@
     <details>
       <summary>Controls</summary>
       <table>
-        <tr><th>Move</th><td>Arrow keys, WASD, or the pad</td></tr>
+        <tr><th>Move</th><td>Arrow keys, WASD, or a thumb anywhere on the left of the screen</td></tr>
         <tr><th>A &mdash; sword</th><td>Z, J, or Space</td></tr>
         <tr><th>B &mdash; second item</th><td>X or K</td></tr>
         <tr><th>Swap items</th><td>Enter</td></tr>
@@ -119,6 +121,8 @@
     <p id="stats" class="stats"></p>
   </section>
 </div>
+<div id="sheet-scrim" hidden></div>
+<script src="vendor/nipplejs.js"></script>
 <script src="main.js" type="module"></script>
 </body>
 </html>

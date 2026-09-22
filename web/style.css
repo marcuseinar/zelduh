@@ -60,10 +60,10 @@ h1 {
 /* ---------------------------------------------------------------- the game */
 
 #play {
+  position: relative;
   display: grid;
   grid-template-areas: "screen";
   justify-items: center;
-  gap: 14px;
 }
 
 #stage {
@@ -101,46 +101,54 @@ canvas {
 
 #overlay p { margin: 0; max-width: 24em; }
 
-/* On-screen controls. Hidden until the script finds a touch screen. */
-.control-side { display: none; }
+/* ------------------------------------------------------- on-screen controls
 
-#pad {
-  position: relative;
-  width: 168px;
-  height: 168px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, #252836 0%, #191b24 70%);
-  border: 1px solid var(--line);
-  touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-tap-highlight-color: transparent;
-}
+   These sit on top of the screen rather than beside it, so the picture gets
+   the whole display. The stick has no home of its own: nipplejs draws it
+   wherever the thumb lands inside its zone. */
 
-.pad-ring {
+#touch-ui {
   position: absolute;
-  inset: 22%;
-  border: 1px dashed #3a3f52;
-  border-radius: 50%;
-}
-
-.pad-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 54px;
-  height: 54px;
-  margin: -27px 0 0 -27px;
-  border-radius: 50%;
-  background: var(--accent-dim);
-  border: 2px solid var(--accent);
-  transition: background 0.1s;
+  inset: 0;
+  z-index: 3;
+  /* Only the controls themselves take touches; the rest falls through. */
   pointer-events: none;
 }
 
-#pad.active .pad-knob { background: var(--accent); }
+#stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 52%;
+  height: 76%;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
 
-#face { display: flex; gap: 18px; align-items: center; }
+/* B sits a little lower than A, the way it does on the console, so the
+   cluster falls naturally under a curled thumb. The B button's offset is a
+   transform, which takes up no room, so the wrapper leaves space for it. */
+#face-wrap {
+  position: absolute;
+  right: calc(10px + var(--safe-right));
+  bottom: calc(38px + var(--safe-bottom));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: auto;
+}
+
+#face { display: flex; gap: 16px; align-items: center; }
+
+#top-bar {
+  position: absolute;
+  top: calc(8px + var(--safe-top));
+  right: calc(10px + var(--safe-right));
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
 
 .round {
   width: 74px;
@@ -150,17 +158,21 @@ canvas {
   font-weight: 700;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  /* Translucent, because they are sitting over the picture. */
+  background: rgba(77, 127, 44, 0.55);
+  backdrop-filter: blur(2px);
 }
 
 .round.b { transform: translateY(26px); }
 .round:active, .round.down { background: var(--accent); color: #0d0e14; }
 
-#minor { display: flex; gap: 10px; justify-content: center; margin-top: 40px; }
-
 .tiny {
   font-size: 12px;
   padding: 6px 10px;
   letter-spacing: 0.08em;
+  background: rgba(28, 30, 40, 0.7);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ------------------------------------------------------------------ panel */
@@ -174,6 +186,8 @@ canvas {
   flex-direction: column;
   gap: 4px;
 }
+
+.sheet-close { display: none; }
 
 .row {
   display: flex;
@@ -262,42 +276,75 @@ code {
   h1 { font-size: 22px; }
 }
 
-/* Phones and tablets: show the controls and let the screen fill the width. */
-@media (pointer: coarse) {
-  body { padding-top: calc(6px + var(--safe-top)); }
-  header { display: none; }
-  .control-side { display: flex; flex-direction: column; align-items: center; }
+/* ------------------------------------------------- touch: the game is the page
 
-  #play {
-    grid-template-areas:
-      "screen screen"
-      "pad    face";
-    grid-template-columns: 1fr 1fr;
-    align-items: center;
-    justify-items: center;
-  }
+   Set by script rather than by a media query, so that these rules cannot be
+   undone by an ordinary rule further down the file. The body is pinned to the
+   viewport: there is nothing to scroll, bounce or pinch. */
 
-  #pad-wrap { grid-area: pad; justify-self: start; }
-  #face-wrap { grid-area: face; justify-self: end; }
-  #stage { padding: 0; border-width: 0; border-radius: 0; width: 100%; }
-  canvas { width: 100%; height: auto; }
-
-  /* Settings stay out of the way until asked for. */
-  #panel { font-size: 14px; }
+body.touch {
+  position: fixed;
+  inset: 0;
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
-/* A phone held sideways: controls either side of the screen. */
-@media (pointer: coarse) and (orientation: landscape) {
-  #shell { max-width: none; gap: 8px; }
-  #play {
-    grid-template-areas: "pad screen face";
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-  }
-  canvas { width: auto; max-width: 100%; }
-  /* Shrink the frame to the screen rather than letting it stretch the column. */
-  #stage { width: auto; justify-self: center; }
-  #pad { width: 132px; height: 132px; }
-  .round { width: 62px; height: 62px; }
-  #panel { display: none; }
+body.touch #shell {
+  max-width: none;
+  height: 100%;
+  gap: 0;
+}
+
+body.touch header { display: none; }
+
+body.touch #play {
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+}
+
+body.touch #stage {
+  padding: 0;
+  border-width: 0;
+  border-radius: 0;
+}
+
+/* The settings become a sheet that slides up over the game. */
+body.touch #panel {
+  position: fixed;
+  z-index: 5;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 86%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  border-radius: var(--radius) var(--radius) 0 0;
+  border-width: 1px 0 0;
+  padding-bottom: calc(14px + var(--safe-bottom));
+  font-size: 14px;
+  transform: translateY(101%);
+  transition: transform 0.22s ease;
+}
+
+body.touch #panel.open { transform: none; }
+body.touch .sheet-close { display: block; align-self: flex-end; margin: 10px 0 0; }
+
+#sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  background: rgba(8, 9, 14, 0.5);
+}
+
+/* A phone held sideways has less height to spare, so the buttons tuck in. */
+@media (orientation: landscape) {
+  body.touch #stick-zone { width: 44%; height: 88%; }
+  body.touch .round { width: 64px; height: 64px; }
+  body.touch #face { gap: 14px; }
 }
