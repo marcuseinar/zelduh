@@ -302,6 +302,18 @@ pub extern "C" fn player_level(player: u32) -> u32 {
     })
 }
 
+/// The low half of the seed this world was generated from.
+#[export_name = "zelduh_seed_lo"]
+pub extern "C" fn seed_lo() -> u32 {
+    with_game(0, |g| g.world.seed as u32)
+}
+
+/// The high half of the seed this world was generated from.
+#[export_name = "zelduh_seed_hi"]
+pub extern "C" fn seed_hi() -> u32 {
+    with_game(0, |g| (g.world.seed >> 32) as u32)
+}
+
 /// A player's health in quarter hearts, or -1 when they are not in the world.
 #[export_name = "zelduh_player_health"]
 pub extern "C" fn player_health(player: u32) -> i32 {
@@ -511,6 +523,9 @@ pub extern "C" fn player_role(player: u32) -> u32 {
 }
 
 /// True when a player slot is in the world.
+///
+/// This is world state, so every machine running the same simulation agrees
+/// about it, which is what lets the netcode decide whose input to wait for.
 #[export_name = "zelduh_player_active"]
 pub extern "C" fn player_active(player: u32) -> u32 {
     with_game(0, |g| {

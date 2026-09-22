@@ -70,23 +70,33 @@
       </div>
     </details>
 
-    <details>
+    <details id="together">
       <summary>Play together</summary>
       <div class="row">
-        <label for="role">Join</label>
-        <select id="role">
-          <option value="hero">as a hero</option>
-          <option value="boss">as the boss</option>
-        </select>
-        <button id="connect">Connect</button>
+        <label for="room">Room</label>
+        <input id="room" type="text" size="18" autocomplete="off" spellcheck="false"
+               placeholder="a word or two">
+        <button id="random-room">Random</button>
+        <button id="connect">Join</button>
       </div>
       <div class="row">
-        <label for="server">Server</label>
-        <input id="server" type="text" placeholder="same site, or wss://your-server" size="24" autocomplete="off">
+        <label for="strategy">Find peers via</label>
+        <select id="strategy"></select>
+        <button id="become-boss" disabled>Play as the boss</button>
+      </div>
+      <div class="row" id="relay-row" hidden>
+        <label for="server">Relay</label>
+        <input id="server" type="text" placeholder="wss://your-server/ws" size="24" autocomplete="off">
       </div>
       <p id="net-status">Playing on your own.</p>
+      <p id="share" class="note" hidden></p>
       <p class="note">Up to four players share one world, and one of them can take over a dungeon
-         boss and hunt the others.</p>
+         boss and hunt the others. Everyone in a room is connected directly to everyone else: the
+         relay only introduces you, and the game itself never passes through a server.</p>
+      <p class="note">Nobody sends a position or a health bar. Every player runs the same
+         simulation and only the buttons travel, which is why a whole world costs a few bytes a
+         frame &mdash; and why the game checks, every couple of seconds, that all of you still
+         agree about it.</p>
     </details>
 
     <details>

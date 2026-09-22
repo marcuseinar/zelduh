@@ -3,12 +3,12 @@ name = "zelduh-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "The multiplayer server: a WebSocket relay with an authoritative clock"
+description = "Optional signalling for peer-to-peer play, and a static file server"
 
 [[bin]]
 name = "zelduh-server"
 path = "src/main.rs"
 
+# No dependencies at all, not even the engine: this process introduces
+# players to each other and serves files. It never touches the simulation.
 [dependencies]
-zelduh-core = { path = "../zelduh-core" }
-zelduh-gen = { path = "../zelduh-gen" }

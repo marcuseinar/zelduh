@@ -4,13 +4,20 @@
 // no signal should still be able to play. The cache name carries a version so
 // that an old one is thrown away rather than lingering.
 
-const CACHE = 'zelduh-v1';
+const CACHE = 'zelduh-v2';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './main.js',
+  './net.js',
   './zelduh.wasm',
+  './vendor/nipplejs.js',
+  './vendor/trystero/core.mjs',
+  './vendor/trystero/nostr.mjs',
+  './vendor/trystero/torrent.mjs',
+  './vendor/trystero/ws-relay.mjs',
+  './vendor/trystero/secp256k1.mjs',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',

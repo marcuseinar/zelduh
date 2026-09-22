@@ -6,23 +6,26 @@ browser.
 
 **Play it: https://marcuseinar.github.io/zelduh/**
 
-It works on a phone: the on-screen pad handles diagonals, the screen fills the
-display in either orientation, and the page can be added to a home screen and
-played offline. Every world comes from a seed, so `#seed=1234` on the end of
-the address is a place you can send someone.
+It works on a phone: put a thumb anywhere on the left of the screen and the
+stick appears under it, the picture fills the display in either orientation,
+and the page can be added to a home screen and played offline. Every world
+comes from a seed, so `#seed=1234` on the end of the address is a place you
+can send someone, and `#room=amber-otter-42` is a game you can send them into.
 
-To run it yourself:
+Multiplayer needs nothing running anywhere: players connect directly to each
+other, so the link above is the whole thing.
 
-```
-./build.sh                                   # build the wasm module
-cargo run --release -p zelduh-server          # serve the page and host a game
-# then open http://localhost:8080
-```
-
-For single player, any static server will do:
+To run it yourself, any static server will do:
 
 ```
 ./build.sh && python3 -m http.server -d web 8080
+```
+
+There is also a small server in the repository, for playing together on a
+network with no way out to the internet:
+
+```
+cargo run --release -p zelduh-server   # serves the page, and introduces peers
 ```
 
 ## What it is
@@ -69,11 +72,17 @@ It needs one setting turned on once, in **Settings -> Pages -> Build and
 deployment -> Source: GitHub Actions**. Until that is done the workflow will
 run and fail at the deploy step.
 
-Multiplayer is the one part static hosting cannot do, because it needs
-`zelduh-server` running somewhere. Put that server's address in the "Play
-together" box on the page and it will connect to it. A page served over https
-needs a `wss://` address, so the server needs to be behind TLS -- any reverse
-proxy will do.
+Multiplayer works from static hosting too, because there is nothing for a
+server to do: peers connect straight to each other. Finding each other in the
+first place is the one thing that needs somebody else's help, and by default
+that is a public relay -- pick one under "Find peers via" in the "Play
+together" box.
+
+If you would rather not use one, `zelduh-server` does the same job on your own
+machine: run it, choose **Your own server**, and put its `ws://` address in the
+relay box. A page served over https can only open `wss://`, so a self-hosted
+relay used from the published site needs to be behind TLS; a page you are
+serving yourself over http has no such problem.
 
 ## Milestones
 
@@ -95,7 +104,7 @@ crates/
   zelduh-gen      world generation: overworlds, dungeons, the graph beneath them
   zelduh-render   the software renderer, 160x144 of packed RGBA
   zelduh-wasm     the browser entry point, a plain C ABI
-  zelduh-server   multiplayer: a WebSocket relay with an authoritative clock
+  zelduh-server   optional signalling for peer-to-peer play, and a file server
   zelduh-cli      a desktop harness: screenshots, map dumps, benchmarks
 web/              the page, its script, and the built wasm module
 ```
@@ -107,19 +116,29 @@ floating point anywhere in the simulation: positions are 24.8 fixed point and
 randomness comes from a seeded generator. The same inputs against the same seed
 reproduce the same world, bit for bit.
 
-That is what makes multiplayer cheap. The network carries *inputs*, a few bytes
-per frame, and every client steps its own copy of the world. Two things keep it
-honest:
+That is what makes multiplayer cheap, and what makes it possible without a
+server at all. Nobody sends a position or a health bar. The network carries
+*inputs* -- a couple of bytes per player per frame -- and every peer steps its
+own copy of the world.
 
-- Anything other than input that changes the world -- a player joining, leaving,
-  or taking over a boss -- travels in the same per-frame message, so it happens
-  on an agreed frame on every machine.
-- Clients periodically hash their whole world and send it; the server says so
-  when someone has drifted, rather than letting two people quietly play
-  different games.
+The model is lockstep with delayed input: a peer sends its buttons a few frames
+ahead of the frame it is simulating, and simulates a frame once everybody's
+buttons for it have arrived. Three things keep it honest:
+
+- One peer, whichever has the lowest id, acts as the arbiter. It hands out
+  player slots and stamps joins, departures and boss takeovers with the frame
+  they take effect on, so the shape of the game changes on the same frame
+  everywhere. It holds no authority over the simulation itself, and if it
+  disappears the next-lowest id takes over without anything else changing.
+- Peers periodically hash their whole world and swap the hashes, so a
+  disagreement is reported rather than quietly played out as two different
+  games.
+- WebRTC can take the better part of a minute to admit a connection has died,
+  so a peer that holds everyone up for more than a few seconds is written off
+  rather than waited for.
 
 Joining a game already in progress works because a world can be serialised
-whole: the server hands over the state as it stands, and everything after that
+whole: the arbiter hands over the state as it stands, and everything after that
 arrives as input.
 
 ### The build has no JavaScript toolchain
@@ -129,6 +148,13 @@ anything a bindings generator produced. `cargo build --target
 wasm32-unknown-unknown` is the entire build; there is no npm, no bundler, and
 nothing that can fall out of step with the compiler. The page owns input, files,
 sound and the canvas; Rust owns the world and the pixels.
+
+Two jobs are not worth doing by hand, and those are somebody else's libraries,
+checked into [`web/vendor`](web/vendor) as their published builds rather than
+installed: [nipplejs](https://github.com/yoannmoinet/nipplejs) draws the thumb
+stick, and [Trystero](https://github.com/dmotz/trystero) introduces peers to
+each other over WebRTC. Both are MIT licensed. Vendoring them keeps the build
+`cargo build` and the page working offline, with no CDN in the critical path.
 
 ### Graphics, and what is not in this repository
 

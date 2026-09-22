@@ -1,15 +1,27 @@
-//! The Zelduh multiplayer server.
+//! The Zelduh signalling server.
 //!
-//! One process serves the web page and runs the shared game. It has no
-//! dependencies beyond the engine itself: the WebSocket handshake and framing
-//! are a couple of hundred lines in `ws`, and the static file serving is a few
-//! dozen more, which is less code than vendoring a web framework would add.
+//! Multiplayer is peer to peer: players connect directly to each other over
+//! WebRTC and the game never passes through a server at all. What peers do
+//! need is somewhere to swap the handful of messages that set a direct
+//! connection up, and by default that is public infrastructure, which is why
+//! the game works from static hosting with nothing running here.
+//!
+//! This is for when that will not do: a network with no route to the
+//! internet, or a preference for keeping your room codes to yourself. Run it
+//! and put its address in the page's relay box.
+//!
+//! It also serves the page, so one process is the whole thing:
 //!
 //! ```text
-//! zelduh-server --port 8080 --dir web --seed 1234
+//! zelduh-server --port 8080 --dir web
 //! ```
+//!
+//! No dependencies beyond the standard library: the WebSocket handshake and
+//! framing are a couple of hundred lines in `ws`, the pub/sub is in `relay`,
+//! and static file serving is a few dozen lines below.
 
-mod session;
+mod json;
+mod relay;
 mod ws;
 
 use std::collections::HashMap;
@@ -19,18 +31,13 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use session::{c2s, Role, Session, TICK_HZ};
+use relay::Relay;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut port = 8080u16;
     let mut dir = PathBuf::from("web");
-    let mut seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(1);
 
     let mut i = 0;
     while i < args.len() {
@@ -45,15 +52,11 @@ fn main() {
                     dir = PathBuf::from(v);
                 }
             }
-            "--seed" | "-s" => {
-                i += 1;
-                seed = args.get(i).and_then(|v| v.parse().ok()).unwrap_or(seed);
-            }
             "--help" | "-h" => {
                 println!(
-                    "zelduh-server [--port N] [--dir PATH] [--seed N]\n\n\
-                     Serves the web page and runs a shared world. Up to {} players.",
-                    session::MAX_PLAYERS
+                    "zelduh-server [--port N] [--dir PATH]\n\n\
+                     Serves the page and introduces players to each other.\n\
+                     The game itself runs peer to peer and never comes through here."
                 );
                 return;
             }
@@ -62,8 +65,7 @@ fn main() {
         i += 1;
     }
 
-    let session = Arc::new(Mutex::new(Session::new(seed)));
-    spawn_tick_loop(Arc::clone(&session));
+    let relay = Arc::new(Mutex::new(Relay::new()));
 
     let listener = match TcpListener::bind(("0.0.0.0", port)) {
         Ok(l) => l,
@@ -73,18 +75,15 @@ fn main() {
         }
     };
     println!("zelduh-server listening on http://localhost:{port}");
-    println!(
-        "  world seed {seed}, up to {} players",
-        session::MAX_PLAYERS
-    );
     println!("  serving {}", dir.display());
+    println!("  signalling at ws://localhost:{port}/ws — put that in the page's relay box");
 
     for stream in listener.incoming() {
         let Ok(stream) = stream else { continue };
-        let session = Arc::clone(&session);
+        let relay = Arc::clone(&relay);
         let dir = dir.clone();
         thread::spawn(move || {
-            if let Err(e) = serve(stream, session, dir) {
+            if let Err(e) = serve(stream, relay, dir) {
                 // A browser closing a tab shows up as a broken pipe; it is not
                 // worth a line of log each time.
                 if e.kind() != std::io::ErrorKind::BrokenPipe {
@@ -95,36 +94,8 @@ fn main() {
     }
 }
 
-/// Steps the world at a fixed rate and tells everyone what happened.
-fn spawn_tick_loop(session: Arc<Mutex<Session>>) {
-    thread::spawn(move || {
-        let period = Duration::from_nanos(1_000_000_000 / TICK_HZ);
-        let start = Instant::now();
-        let mut ticks = 0u64;
-        loop {
-            ticks += 1;
-            // Sleep to the next absolute deadline rather than for a fixed
-            // period, so the clock does not drift over a long session.
-            let deadline = start + period * ticks as u32;
-            let now = Instant::now();
-            if deadline > now {
-                thread::sleep(deadline - now);
-            }
-            let mut s = match session.lock() {
-                Ok(s) => s,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            if s.is_empty() {
-                continue;
-            }
-            let msg = s.tick();
-            s.broadcast(&msg);
-        }
-    });
-}
-
 /// Reads one HTTP request and either upgrades it or serves a file.
-fn serve(stream: TcpStream, session: Arc<Mutex<Session>>, dir: PathBuf) -> std::io::Result<()> {
+fn serve(stream: TcpStream, relay: Arc<Mutex<Relay>>, dir: PathBuf) -> std::io::Result<()> {
     stream.set_nodelay(true)?;
     let mut reader = BufReader::new(stream.try_clone()?);
 
@@ -157,7 +128,7 @@ fn serve(stream: TcpStream, session: Arc<Mutex<Session>>, dir: PathBuf) -> std::
         .unwrap_or(false);
 
     if wants_upgrade && path.starts_with("/ws") {
-        return websocket(stream, reader, headers, &path, session);
+        return websocket(stream, reader, headers, relay);
     }
     if method != "GET" && method != "HEAD" {
         return write_response(stream, "405 Method Not Allowed", "text/plain", b"no");
@@ -165,13 +136,12 @@ fn serve(stream: TcpStream, session: Arc<Mutex<Session>>, dir: PathBuf) -> std::
     serve_file(stream, &dir, &path)
 }
 
-/// Completes the handshake, then relays between the socket and the session.
+/// Completes the handshake, then pumps messages between socket and relay.
 fn websocket(
     stream: TcpStream,
     mut reader: BufReader<TcpStream>,
     headers: HashMap<String, String>,
-    path: &str,
-    session: Arc<Mutex<Session>>,
+    relay: Arc<Mutex<Relay>>,
 ) -> std::io::Result<()> {
     let Some(key) = headers.get("sec-websocket-key") else {
         return write_response(stream, "400 Bad Request", "text/plain", b"no key");
@@ -189,59 +159,40 @@ fn websocket(
     )?;
     out.flush()?;
 
-    // ?role=boss asks to play as the monster.
-    let role = if path.contains("role=boss") {
-        Role::Boss
-    } else {
-        Role::Hero
-    };
-
-    let (tx, rx): (Sender<Vec<u8>>, Receiver<Vec<u8>>) = channel();
-    let joined = {
-        let mut s = lock(&session);
-        s.join(tx, role)
-    };
-    let Some((slot, welcome)) = joined else {
-        let _ = ws::write_frame(
-            &mut out,
-            ws::Opcode::Binary,
-            &session::info("this game is full"),
-        );
-        let _ = ws::write_frame(&mut out, ws::Opcode::Close, &[]);
-        return Ok(());
-    };
-    {
-        let s = lock(&session);
+    let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+    let id = {
+        let mut r = lock(&relay);
+        let id = r.connect(tx);
         println!(
-            "player {slot} joined as {role:?} ({} playing)",
-            s.player_count()
+            "peer connected ({} here, {} rooms)",
+            r.client_count(),
+            r.topic_count()
         );
-    }
+        id
+    };
 
-    // One thread does all the writing, so the game loop never blocks on a
-    // slow socket.
+    // One thread does all the writing, so a slow socket never holds up the
+    // relay lock and the peers waiting behind it.
     let mut writer = stream.try_clone()?;
     let writer_thread = thread::spawn(move || {
         while let Ok(msg) = rx.recv() {
-            if ws::write_frame(&mut writer, ws::Opcode::Binary, &msg).is_err() {
+            if ws::write_frame(&mut writer, ws::Opcode::Text, msg.as_bytes()).is_err() {
                 break;
             }
         }
         let _ = ws::write_frame(&mut writer, ws::Opcode::Close, &[]);
     });
 
+    let result = read_loop(&mut reader, &relay, id);
     {
-        let s = lock(&session);
-        s.send_to(slot, &welcome);
+        let mut r = lock(&relay);
+        r.disconnect(id);
+        println!(
+            "peer left ({} here, {} rooms)",
+            r.client_count(),
+            r.topic_count()
+        );
     }
-
-    let result = read_loop(&mut reader, &session, slot);
-
-    {
-        let mut s = lock(&session);
-        s.leave(slot);
-    }
-    println!("player {slot} left");
     let _ = writer_thread.join();
     result
 }
@@ -249,8 +200,8 @@ fn websocket(
 /// Handles messages from one client until the socket closes.
 fn read_loop(
     reader: &mut BufReader<TcpStream>,
-    session: &Arc<Mutex<Session>>,
-    slot: usize,
+    relay: &Arc<Mutex<Relay>>,
+    id: usize,
 ) -> std::io::Result<()> {
     loop {
         let Some(frame) = ws::read_frame(reader)? else {
@@ -258,49 +209,24 @@ fn read_loop(
         };
         match frame.opcode {
             ws::Opcode::Close => return Ok(()),
-            ws::Opcode::Ping | ws::Opcode::Pong | ws::Opcode::Text => continue,
-            _ => {}
+            ws::Opcode::Ping | ws::Opcode::Pong => continue,
+            // Signalling is JSON text. A binary frame is not this protocol.
+            ws::Opcode::Binary => continue,
+            ws::Opcode::Text => {}
+            _ => continue,
         }
-        let payload = frame.payload;
-        if payload.is_empty() {
+        let Ok(text) = String::from_utf8(frame.payload) else {
             continue;
-        }
-        match payload[0] {
-            c2s::INPUT if payload.len() >= 3 => {
-                let buttons = u16::from_le_bytes([payload[1], payload[2]]);
-                lock(session).set_input(slot, buttons);
-            }
-            c2s::CHECKSUM if payload.len() >= 13 => {
-                let frame_no = u32::from_le_bytes([payload[1], payload[2], payload[3], payload[4]]);
-                let sum = u64::from_le_bytes([
-                    payload[5],
-                    payload[6],
-                    payload[7],
-                    payload[8],
-                    payload[9],
-                    payload[10],
-                    payload[11],
-                    payload[12],
-                ]);
-                let mut s = lock(session);
-                if let Some(reply) = s.check(frame_no, sum) {
-                    eprintln!("player {slot} has drifted out of step at frame {frame_no}");
-                    s.send_to(slot, &reply);
-                }
-            }
-            c2s::ROLE if payload.len() >= 2 && payload[1] == 1 => {
-                lock(session).request_boss(slot);
-            }
-            _ => {}
-        }
+        };
+        lock(relay).handle(id, &text);
     }
 }
 
-/// Takes the session lock, recovering rather than panicking if a thread died
+/// Takes the relay lock, recovering rather than panicking if a thread died
 /// while holding it.
-fn lock(session: &Arc<Mutex<Session>>) -> std::sync::MutexGuard<'_, Session> {
-    match session.lock() {
-        Ok(s) => s,
+fn lock(relay: &Arc<Mutex<Relay>>) -> std::sync::MutexGuard<'_, Relay> {
+    match relay.lock() {
+        Ok(r) => r,
         Err(poisoned) => poisoned.into_inner(),
     }
 }

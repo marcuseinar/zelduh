@@ -4,6 +4,8 @@
 // the canvas. Everything crosses the boundary as integers or as bytes in the
 // module's memory, so there is no bindings generator in the build.
 
+import { createNet, randomRoom, selfId, STRATEGIES } from './net.js';
+
 const BUTTON = {
   up: 1 << 0,
   down: 1 << 1,
@@ -51,10 +53,16 @@ const dom = {
   assetStatus: document.getElementById('asset-status'),
   resetAssets: document.getElementById('reset-assets'),
   stats: document.getElementById('stats'),
-  role: document.getElementById('role'),
   connect: document.getElementById('connect'),
   netStatus: document.getElementById('net-status'),
   server: document.getElementById('server'),
+  room: document.getElementById('room'),
+  randomRoom: document.getElementById('random-room'),
+  strategy: document.getElementById('strategy'),
+  relayRow: document.getElementById('relay-row'),
+  becomeBoss: document.getElementById('become-boss'),
+  share: document.getElementById('share'),
+  together: document.getElementById('together'),
   stage: document.getElementById('stage'),
   play: document.getElementById('play'),
   panel: document.getElementById('panel'),
@@ -122,6 +130,9 @@ async function loadWasm() {
     memory: e.memory,
     zelduh_alloc: e.zelduh_alloc,
     zelduh_set_screen: e.zelduh_set_screen,
+    zelduh_player_active: e.zelduh_player_active,
+    zelduh_seed_lo: e.zelduh_seed_lo,
+    zelduh_seed_hi: e.zelduh_seed_hi,
     zelduh_free: e.zelduh_free,
     zelduh_new_game: e.zelduh_new_game,
     zelduh_join: e.zelduh_join,
@@ -148,6 +159,8 @@ async function loadWasm() {
     zelduh_leave: e.zelduh_leave,
     zelduh_possess_boss: e.zelduh_possess_boss,
     zelduh_restore: e.zelduh_restore,
+    zelduh_save: e.zelduh_save,
+    zelduh_snapshot: e.zelduh_snapshot,
     zelduh_checksum_lo: e.zelduh_checksum_lo,
     zelduh_checksum_hi: e.zelduh_checksum_hi,
     zelduh_player_role: e.zelduh_player_role,
@@ -488,7 +501,10 @@ function parseSeed(value) {
 dom.newWorld.addEventListener('click', () => {
   audio.unlock();
   // A new local world means leaving the shared one.
-  if (online()) net.socket.close();
+  if (online()) {
+    net.leave();
+    refreshNetUi('Playing on your own.');
+  }
   startWorld(parseSeed(dom.seed.value));
 });
 dom.randomSeed.addEventListener('click', () => {
@@ -642,29 +658,11 @@ dom.canvas.addEventListener('pointerdown', () => {
 
 // ----------------------------------------------------------------- network
 
-// Message ids, matching the server's `s2c` and `c2s` modules.
-const S2C = { WELCOME: 1, FRAME: 2, DESYNC: 3, INFO: 4 };
-const C2S = { INPUT: 0x10, CHECKSUM: 0x11, ROLE: 0x12 };
-// Bytes before the snapshot in a welcome message.
-const WELCOME_HEADER = 19;
-// How often a client tells the server what it thinks the world looks like.
-const CHECKSUM_EVERY = 120;
-// More than this many frames waiting means the tab has fallen behind.
-const MAX_FRAMES_PER_TICK = 8;
-
-const net = {
-  socket: null,
-  slot: 0,
-  players: 1,
-  queue: [],
-  lastSent: -1,
-  behind: 0,
-  desynced: false,
-};
+let net = null;
 
 /** True while a shared game is running. */
 function online() {
-  return net.socket && net.socket.readyState === WebSocket.OPEN;
+  return !!net && net.online;
 }
 
 function setNetStatus(text, state = '') {
@@ -672,156 +670,80 @@ function setNetStatus(text, state = '') {
   dom.netStatus.className = state;
 }
 
-function connect() {
-  if (online()) {
-    net.socket.close();
-    return;
+function refreshNetUi(message) {
+  if (!net) return;
+  const live = net.online;
+  const boss = live && net.slot >= 0 && wasm.zelduh_player_role(net.slot) === 1;
+  dom.connect.textContent = live ? 'Leave' : 'Join';
+  dom.becomeBoss.disabled = !live || !net.synced || boss;
+  dom.becomeBoss.textContent = boss ? 'You are the boss' : 'Play as the boss';
+  dom.share.hidden = !live;
+  if (live) {
+    const url = new URL(location.href);
+    url.hash = `room=${encodeURIComponent(dom.room.value.trim())}`;
+    dom.share.textContent = `Share this address and they arrive in your world: ${url}`;
   }
-  const role = dom.role.value === 'boss' ? '?role=boss' : '';
-  const typed = dom.server.value.trim();
-  let url;
-  if (typed) {
-    // Accept a bare host, a ws:// address, or a full path.
-    const base = /^wss?:\/\//.test(typed) ? typed : `ws://${typed}`;
-    url = base.replace(/\/$/, '') + (base.includes('/ws') ? '' : '/ws') + role;
+  setNetStatus(
+    message ?? net.describe(),
+    net.desynced ? 'bad' : live ? 'live' : '',
+  );
+}
+
+function setupNetUi() {
+  for (const [key, { label }] of Object.entries(STRATEGIES)) {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    dom.strategy.append(option);
+  }
+  dom.strategy.value = 'nostr';
+  dom.strategy.addEventListener('change', () => {
+    dom.relayRow.hidden = dom.strategy.value !== 'relay';
+    remember('zelduh.strategy', dom.strategy.value);
+  });
+
+  dom.randomRoom.addEventListener('click', () => {
+    dom.room.value = randomRoom();
+  });
+
+  dom.connect.addEventListener('click', async () => {
+    audio.unlock();
+    if (net.online) {
+      net.leave();
+      refreshNetUi('Playing on your own.');
+      return;
+    }
+    if (!dom.room.value.trim()) dom.room.value = randomRoom();
+    const code = dom.room.value.trim();
+    remember('zelduh.room', code);
+    remember('zelduh.server', dom.server.value.trim());
+    setNetStatus('Looking for the room\u2026');
     try {
-      localStorage.setItem('zelduh.server', typed);
-    } catch {
-      // Not remembering the address is survivable.
+      await net.join(code, {
+        strategy: dom.strategy.value,
+        relayUrls: dom.server.value.trim() ? [dom.server.value.trim()] : [],
+      });
+      history.replaceState(null, '', `#room=${encodeURIComponent(code)}`);
+      refreshNetUi();
+    } catch (err) {
+      setNetStatus(`Could not open the room: ${err.message}`, 'bad');
     }
-  } else {
-    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-    url = `${scheme}://${location.host}/ws${role}`;
-  }
-  setNetStatus('Connecting\u2026');
-  let socket;
+  });
+
+  dom.becomeBoss.addEventListener('click', () => {
+    net.requestBoss();
+    dom.becomeBoss.disabled = true;
+    setNetStatus('Asking for a boss to drive\u2026', 'live');
+  });
+}
+
+function remember(key, value) {
   try {
-    socket = new WebSocket(url);
-  } catch (err) {
-    setNetStatus(`Could not connect: ${err.message}`, 'bad');
-    return;
-  }
-  socket.binaryType = 'arraybuffer';
-  net.socket = socket;
-
-  socket.onopen = () => {
-    dom.connect.textContent = 'Disconnect';
-    setNetStatus('Connected, waiting for the world\u2026', 'live');
-  };
-  socket.onclose = () => {
-    dom.connect.textContent = 'Connect';
-    setNetStatus(net.desynced
-      ? 'Disconnected after drifting out of step.'
-      : 'Playing on your own.', net.desynced ? 'bad' : '');
-    net.queue.length = 0;
-    net.socket = null;
-  };
-  socket.onerror = () => {
-    setNetStatus(
-      typed
-        ? `Nothing answered at ${typed}.`
-        : 'No server here. Run zelduh-server, and put its address in the box above.',
-      'bad',
-    );
-  };
-  socket.onmessage = (event) => handleMessage(new DataView(event.data));
-}
-
-function handleMessage(view) {
-  const kind = view.getUint8(0);
-  if (kind === S2C.WELCOME) {
-    net.slot = view.getUint8(1);
-    net.players = view.getUint8(2);
-    const seedLo = view.getUint32(3, true);
-    const seedHi = view.getUint32(7, true);
-    const frame = view.getUint32(11, true);
-    const snapshotLen = view.getUint32(15, true);
-
-    wasm.zelduh_new_game(seedLo, seedHi, net.players);
-    if (snapshotLen > 0) {
-      // Joining a game already under way: take the state as it stands.
-      const snapshot = new Uint8Array(view.buffer, view.byteOffset + WELCOME_HEADER, snapshotLen);
-      const ok = withBytes(snapshot, (ptr, len) => wasm.zelduh_restore(ptr, len));
-      if (!ok) {
-        setNetStatus('The server sent a world this build cannot read.', 'bad');
-        net.socket.close();
-        return;
-      }
-    }
-    net.desynced = false;
-    net.lastSent = -1;
-    net.queue.length = 0;
-    setPaused(false);
-    setNetStatus(`Player ${net.slot + 1} of ${net.players}, joined at frame ${frame}.`, 'live');
-    return;
-  }
-
-  if (kind === S2C.FRAME) {
-    // Copy it out: the event's buffer is not ours to keep.
-    net.queue.push(new Uint8Array(view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)));
-    return;
-  }
-
-  if (kind === S2C.DESYNC) {
-    const frame = view.getUint32(1, true);
-    net.desynced = true;
-    setNetStatus(`Out of step with the server at frame ${frame}. Reconnect to catch up.`, 'bad');
-    return;
-  }
-
-  if (kind === S2C.INFO) {
-    const text = new TextDecoder().decode(new Uint8Array(view.buffer, view.byteOffset + 1));
-    setNetStatus(text, 'bad');
+    localStorage.setItem(key, value);
+  } catch {
+    // Private windows can refuse storage; nothing here is worth failing over.
   }
 }
-
-/** Applies one frame message: the commands, then the inputs, then a step. */
-function applyFrame(msg) {
-  const view = new DataView(msg.buffer, msg.byteOffset, msg.byteLength);
-  const joinMask = msg[6];
-  const bossMask = msg[7];
-  const leaveMask = msg[8];
-  for (let i = 0; i < net.players; i += 1) {
-    const bit = 1 << i;
-    if (leaveMask & bit) wasm.zelduh_leave(i);
-    else if (bossMask & bit) wasm.zelduh_possess_boss(i);
-    else if (joinMask & bit) wasm.zelduh_join(i);
-  }
-  for (let i = 0; i < net.players; i += 1) {
-    wasm.zelduh_set_input(i, view.getUint16(9 + i * 2, true));
-  }
-  wasm.zelduh_step();
-  drainEvents();
-
-  const frame = view.getUint32(1, true);
-  if (frame % CHECKSUM_EVERY === 0) sendChecksum(frame);
-}
-
-function sendInput(buttons) {
-  if (!online() || buttons === net.lastSent) return;
-  net.lastSent = buttons;
-  const msg = new Uint8Array(3);
-  msg[0] = C2S.INPUT;
-  msg[1] = buttons & 0xff;
-  msg[2] = (buttons >> 8) & 0xff;
-  net.socket.send(msg);
-}
-
-function sendChecksum(frame) {
-  if (!online()) return;
-  const msg = new Uint8Array(13);
-  const view = new DataView(msg.buffer);
-  view.setUint8(0, C2S.CHECKSUM);
-  view.setUint32(1, frame, true);
-  view.setUint32(5, wasm.zelduh_checksum_lo(), true);
-  view.setUint32(9, wasm.zelduh_checksum_hi(), true);
-  net.socket.send(msg);
-}
-
-dom.connect.addEventListener('click', () => {
-  audio.unlock();
-  connect();
-});
 
 // -------------------------------------------------------------------- loop
 
@@ -838,15 +760,10 @@ function frame(now) {
   lastTime = now;
 
   if (online()) {
-    // The server owns the clock. Our own buttons go out; the world only moves
-    // when a frame message says what everyone did.
-    sendInput(held | gamepadButtons());
-    net.behind = net.queue.length;
-    let applied = 0;
-    while (net.queue.length && applied < MAX_FRAMES_PER_TICK) {
-      applyFrame(net.queue.shift());
-      applied += 1;
-    }
+    // Every peer keeps its own clock and its own copy of the world. A frame
+    // is simulated once everybody's buttons for it have arrived, which is
+    // what keeps the copies identical.
+    net.pump(dt, held | gamepadButtons());
     accumulator = 0;
   } else if (!paused) {
     accumulator += dt;
@@ -891,7 +808,7 @@ function drainEvents() {
 }
 
 function draw() {
-  wasm.zelduh_render(online() ? net.slot : 0);
+  wasm.zelduh_render(online() && net.slot >= 0 ? net.slot : 0);
   const len = wasm.zelduh_framebuffer_len();
   if (!len) return;
   const src = bytes(wasm.zelduh_framebuffer(), len);
@@ -903,15 +820,17 @@ function draw() {
 }
 
 function updateStats() {
-  const hp = wasm.zelduh_player_health(0);
+  if (net) refreshNetUi();
+  const me = online() && net.slot >= 0 ? net.slot : 0;
+  const hp = wasm.zelduh_player_health(me);
   dom.stats.textContent =
     `${fps} fps · frame ${wasm.zelduh_frame()} · ` +
-    `level ${wasm.zelduh_player_level(0)} · ` +
+    `level ${wasm.zelduh_player_level(me)} · ` +
     `${wasm.zelduh_entity_count()} entities · ` +
     `${wasm.zelduh_tile_count()} tiles · ` +
     `hearts ${(Math.max(hp, 0) / 4).toFixed(2)} · ` +
-    `rupees ${wasm.zelduh_player_rupees(0)} · ` +
-    `kills ${wasm.zelduh_player_kills(0)}`;
+    `rupees ${wasm.zelduh_player_rupees(me)} · ` +
+    `kills ${wasm.zelduh_player_kills(me)}`;
 }
 
 // -------------------------------------------------------------------- start
@@ -941,8 +860,8 @@ async function main() {
     dom.scale.value = saved ?? (TOUCH ? '0' : '3');
     const fill = localStorage.getItem('zelduh.fill');
     if (fill !== null) dom.fill.checked = fill === '1';
-    const server = localStorage.getItem('zelduh.server');
-    if (server) dom.server.value = server;
+    const relay = localStorage.getItem('zelduh.server');
+    if (relay) dom.server.value = relay;
   } catch {
     dom.scale.value = TOUCH ? '0' : '3';
   }
@@ -951,15 +870,44 @@ async function main() {
   // Two frames later the layout has settled, including any late web font.
   requestAnimationFrame(() => requestAnimationFrame(applyScreen));
 
-  // A seed in the address bar makes a world shareable: #seed=1234
-  const fromHash = new URLSearchParams(location.hash.slice(1)).get('seed');
+  net = createNet(wasm, {
+    restore: (bytes) => !!withBytes(bytes, (ptr, len) => wasm.zelduh_restore(ptr, len)),
+    onStepped: drainEvents,
+    onState: (message) => refreshNetUi(message),
+    onSeed: (seed) => { dom.seed.value = String(seed); },
+  });
+  setupNetUi();
+
+  // A seed in the address bar makes a world shareable: #seed=1234, and a room
+  // code takes you straight into somebody else's: #room=amber-otter-42
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const fromHash = hash.get('seed');
   if (fromHash) dom.seed.value = fromHash;
+  const roomFromHash = hash.get('room');
+  dom.room.value = roomFromHash ?? readStored('zelduh.room') ?? randomRoom();
+  dom.strategy.value = readStored('zelduh.strategy') ?? 'nostr';
+  dom.relayRow.hidden = dom.strategy.value !== 'relay';
 
   startWorld(parseSeed(dom.seed.value));
   dom.overlay.hidden = true;
   registerServiceWorker();
-  window.zelduh = { wasm, startWorld, net, connect, get held() { return held; } };
+  window.zelduh = { wasm, startWorld, net, selfId, get held() { return held; } };
   requestAnimationFrame(frame);
+
+  // Arriving on a shared link should just start playing together.
+  if (roomFromHash) {
+    dom.together.open = true;
+    dom.connect.click();
+  }
+}
+
+/** Reads a remembered setting, or null when storage is not available. */
+function readStored(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
 }
 
 /** Registers the offline cache, if the browser has one to offer. */
