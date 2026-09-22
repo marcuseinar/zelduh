@@ -1,0 +1,14 @@
+[package]
+name = "zelduh-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+zelduh-core = { path = "../zelduh-core" }
+zelduh-assets = { path = "../zelduh-assets" }
+zelduh-gen = { path = "../zelduh-gen" }
+zelduh-render = { path = "../zelduh-render" }

@@ -1,0 +1,15 @@
+[package]
+name = "zelduh-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "zelduh"
+path = "src/main.rs"
+
+[dependencies]
+zelduh-core = { path = "../zelduh-core" }
+zelduh-assets = { path = "../zelduh-assets" }
+zelduh-gen = { path = "../zelduh-gen" }
+zelduh-render = { path = "../zelduh-render" }

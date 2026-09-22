@@ -1,0 +1,8 @@
+[package]
+name = "zelduh-gen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+zelduh-core = { path = "../zelduh-core" }

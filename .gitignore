@@ -1,0 +1,8 @@
+/target
+/web/zelduh.wasm
+/dist
+*.gb
+*.gbc
+*.rom
+/assets/roms/
+/.cache
