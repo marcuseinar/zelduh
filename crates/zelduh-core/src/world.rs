@@ -153,7 +153,7 @@ pub struct World {
     pub players: Vec<Player>,
     pub events: Events,
     /// Rooms whose contents have been spawned, keyed by (level, room index).
-    spawned: Vec<(u16, u16)>,
+    pub(crate) spawned: Vec<(u16, u16)>,
 }
 
 impl World {

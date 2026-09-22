@@ -5,6 +5,7 @@ members = [
     "crates/zelduh-assets",
     "crates/zelduh-gen",
     "crates/zelduh-render",
+    "crates/zelduh-server",
     "crates/zelduh-wasm",
     "crates/zelduh-cli",
 ]

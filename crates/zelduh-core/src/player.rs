@@ -26,6 +26,11 @@ pub const GRAVITY: Fx = 56;
 
 /// Advances one player by a frame.
 pub(crate) fn update(world: &mut World, pi: usize) {
+    // A player who has taken over a boss is driving a monster, not a hero.
+    if world.players[pi].role == crate::world::Role::Boss {
+        crate::boss::update(world, pi);
+        return;
+    }
     let eid = world.players[pi].entity;
     let Some(mut e) = world.entities.get(eid).cloned() else {
         return;

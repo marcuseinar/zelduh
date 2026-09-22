@@ -39,6 +39,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "zelduh-server"
+version = "0.1.0"
+dependencies = [
+ "zelduh-core",
+ "zelduh-gen",
+]
+
+[[package]]
 name = "zelduh-wasm"
 version = "0.1.0"
 dependencies = [

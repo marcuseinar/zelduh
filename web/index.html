@@ -48,6 +48,16 @@
       <label class="check"><input id="sound" type="checkbox" checked> Sound</label>
     </div>
 
+    <div class="row" id="multiplayer">
+      <label for="role">Play together</label>
+      <select id="role">
+        <option value="hero">as a hero</option>
+        <option value="boss">as the boss</option>
+      </select>
+      <button id="connect">Connect</button>
+      <span id="net-status">Playing on your own.</span>
+    </div>
+
     <div id="drop" class="row drop">
       <p><strong>Graphics</strong> &mdash; drop a Game&nbsp;Boy ROM, a tile dump, an image or a
          <code>.zprofile</code> here, or <label for="file" class="link">choose a file</label>.</p>
@@ -66,7 +76,19 @@
         <tr><th>Run (with boots)</th><td>Shift</td></tr>
         <tr><th>Pause</th><td>P</td></tr>
       </table>
+      <p>As the boss: A slams everything standing next to you, B throws a ring of fire.</p>
       <p>A gamepad works too. On a touch screen the on&#8209;screen pad appears automatically.</p>
+    </details>
+
+    <details>
+      <summary>Playing together</summary>
+      <p>Run <code>zelduh-server</code> and open the page it serves. Up to four players share one
+         world; one of them can take over a dungeon boss and hunt the others.</p>
+      <p>The simulation is the same on every machine, so only button presses travel over the
+         network &mdash; a few bytes per frame. Each client checks in with a hash of its own world
+         now and then, and the server says so if anyone has drifted out of step.</p>
+      <p>Joining a game in progress works: the server hands over the state as it stands, and
+         everything after that arrives as input.</p>
     </details>
 
     <details>

@@ -12,6 +12,7 @@
 //! Rendering, asset loading and networking all live in other crates and read
 //! this one; nothing here reads them.
 
+pub mod boss;
 pub mod combat;
 pub mod entity;
 pub mod event;
@@ -24,6 +25,7 @@ pub mod objects;
 pub mod physics;
 pub mod player;
 pub mod rng;
+pub mod save;
 pub mod tiles;
 pub mod world;
 

@@ -450,6 +450,16 @@ impl Entity {
         }
     }
 
+    /// The generation counter for this slot, used by snapshots.
+    pub fn generation(&self) -> u16 {
+        self.gen
+    }
+
+    /// Restores a generation counter when loading a snapshot.
+    pub fn set_generation(&mut self, gen: u16) {
+        self.gen = gen;
+    }
+
     /// True when the entity can be hurt right now.
     pub fn can_be_hurt(&self) -> bool {
         self.alive && self.has(eflag::VULNERABLE) && self.iframes == 0 && self.hp > 0
@@ -581,6 +591,31 @@ impl Entities {
                 None
             }
         })
+    }
+
+    /// Every slot, live or not, in index order. Snapshots need the dead ones
+    /// too so that handles keep pointing at the same slots after a restore.
+    pub fn slots(&self) -> &[Entity] {
+        &self.slots
+    }
+
+    /// The free list, in the order slots will be handed out again.
+    ///
+    /// Snapshots have to carry this: which slot the next spawn lands in decides
+    /// the order entities are visited in, and therefore what the simulation
+    /// does next. Rebuilding it in index order is not the same slab.
+    pub fn free_slots(&self) -> &[u16] {
+        &self.free
+    }
+
+    /// Rebuilds a slab from slots and a free list read out of a snapshot.
+    pub fn rebuild(slots: Vec<Entity>, free: Vec<u16>) -> Entities {
+        let live = slots.iter().filter(|e| e.alive).count();
+        let free = free
+            .into_iter()
+            .filter(|i| slots.get(*i as usize).map(|e| !e.alive).unwrap_or(false))
+            .collect();
+        Entities { slots, free, live }
     }
 
     /// Removes every entity, keeping allocated storage.

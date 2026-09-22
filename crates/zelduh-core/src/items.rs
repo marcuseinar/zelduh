@@ -120,6 +120,16 @@ impl Default for Inventory {
 }
 
 impl Inventory {
+    /// The raw owned-items bitmask, for snapshots.
+    pub fn owned_bits(&self) -> u32 {
+        self.owned
+    }
+
+    /// Restores the owned-items bitmask from a snapshot.
+    pub fn set_owned_bits(&mut self, bits: u32) {
+        self.owned = bits;
+    }
+
     /// Grants an item.
     pub fn give(&mut self, item: Item) {
         if item != Item::None {

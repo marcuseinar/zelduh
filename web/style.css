@@ -140,6 +140,19 @@ button:active { transform: translateY(1px); }
 
 #asset-status { color: var(--accent); font-variant-numeric: tabular-nums; }
 
+#net-status { color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+#net-status.live { color: var(--accent); }
+#net-status.bad { color: #e8895a; }
+
+select {
+  background: #0d0e14;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+}
+
 details { border-top: 1px solid var(--line); padding-top: 10px; }
 summary { cursor: pointer; color: var(--dim); }
 details p, details table { font-size: 14px; color: var(--dim); }

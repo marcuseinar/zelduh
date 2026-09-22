@@ -371,6 +371,106 @@ pub extern "C" fn tile_count() -> u32 {
     with_game(0, |g| g.pack.tile_count() as u32)
 }
 
+// ----- multiplayer -------------------------------------------------------
+
+/// Hands a player control of a boss. Returns 1 when there was one to take.
+#[export_name = "zelduh_possess_boss"]
+pub extern "C" fn possess_boss(player: u32) -> u32 {
+    with_game(0, |g| u32::from(g.world.possess_boss(player as usize)))
+}
+
+/// Replaces the world with one restored from a snapshot.
+///
+/// This is how a player joins a game that is already under way: the server
+/// sends the state as of a frame, and everything after it arrives as input.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes.
+#[export_name = "zelduh_restore"]
+pub unsafe extern "C" fn restore(ptr: *const u8, len: usize) -> u32 {
+    if ptr.is_null() || len == 0 {
+        return 0;
+    }
+    let data = std::slice::from_raw_parts(ptr, len);
+    let Some(world) = World::load(data) else {
+        return 0;
+    };
+    GAME.with(|g| {
+        let mut slot = g.borrow_mut();
+        match slot.as_mut() {
+            Some(game) => game.world = world,
+            None => {
+                *slot = Some(Game {
+                    world,
+                    pack: builtin::pack(),
+                    fb: Framebuffer::new(),
+                    events: Vec::new(),
+                    report: String::new(),
+                    incoming: Vec::new(),
+                })
+            }
+        }
+    });
+    1
+}
+
+/// Writes a snapshot of the world into the report buffer's neighbour, and
+/// returns its length. Read it with [`snapshot`].
+#[export_name = "zelduh_save"]
+pub extern "C" fn save() -> usize {
+    with_game(0, |g| {
+        g.incoming = g.world.save();
+        g.incoming.len()
+    })
+}
+
+/// Pointer to the snapshot written by [`save`].
+#[export_name = "zelduh_snapshot"]
+pub extern "C" fn snapshot() -> *const u8 {
+    with_game(std::ptr::null(), |g| g.incoming.as_ptr())
+}
+
+/// The low half of the world checksum.
+///
+/// Split in two because a 64 bit return value crosses the boundary as a
+/// BigInt, which is awkward to compare in the hot path of a game loop.
+#[export_name = "zelduh_checksum_lo"]
+pub extern "C" fn checksum_lo() -> u32 {
+    with_game(0, |g| g.world.checksum() as u32)
+}
+
+/// The high half of the world checksum.
+#[export_name = "zelduh_checksum_hi"]
+pub extern "C" fn checksum_hi() -> u32 {
+    with_game(0, |g| (g.world.checksum() >> 32) as u32)
+}
+
+/// What a player is playing as: 0 for a hero, 1 for a boss.
+#[export_name = "zelduh_player_role"]
+pub extern "C" fn player_role(player: u32) -> u32 {
+    with_game(0, |g| {
+        g.world
+            .players
+            .get(player as usize)
+            .map(|p| p.role as u32)
+            .unwrap_or(0)
+    })
+}
+
+/// True when a player slot is in the world.
+#[export_name = "zelduh_player_active"]
+pub extern "C" fn player_active(player: u32) -> u32 {
+    with_game(0, |g| {
+        u32::from(
+            g.world
+                .players
+                .get(player as usize)
+                .map(|p| p.active)
+                .unwrap_or(false),
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,6 +533,78 @@ mod tests {
         let ptr = events();
         let bytes = unsafe { std::slice::from_raw_parts(ptr, events_len()) };
         assert_eq!(bytes[0], 1, "the first event should be a sound");
+    }
+
+    #[test]
+    fn a_snapshot_can_be_taken_and_put_back() {
+        new_game(31337, 0, 2);
+        join(0);
+        for _ in 0..90 {
+            set_input(0, zelduh_core::button::DOWN as u32);
+            step();
+        }
+        let before = (checksum_lo(), checksum_hi());
+        let len = save();
+        assert!(len > 0);
+        let data = unsafe { std::slice::from_raw_parts(snapshot(), len) }.to_vec();
+
+        // A different world, then back to the saved one.
+        new_game(1, 0, 2);
+        join(0);
+        step();
+        assert_ne!((checksum_lo(), checksum_hi()), before);
+        assert_eq!(unsafe { restore(data.as_ptr(), data.len()) }, 1);
+        assert_eq!((checksum_lo(), checksum_hi()), before);
+    }
+
+    #[test]
+    fn restoring_rubbish_is_refused() {
+        new_game(1, 0, 1);
+        let junk = [1u8, 2, 3, 4];
+        assert_eq!(unsafe { restore(junk.as_ptr(), junk.len()) }, 0);
+        assert_eq!(unsafe { restore(std::ptr::null(), 0) }, 0);
+    }
+
+    #[test]
+    fn two_modules_fed_the_same_inputs_agree() {
+        // The same check the server makes, done in one process: this is the
+        // property that lets clients trade inputs instead of state.
+        new_game(2024, 0, 2);
+        join(0);
+        join(1);
+        let mut expected = Vec::new();
+        for f in 0..300u32 {
+            set_input(0, (f * 13) & 0x3f);
+            set_input(1, (f * 7) & 0x1f);
+            step();
+            if f % 60 == 0 {
+                expected.push((checksum_lo(), checksum_hi()));
+            }
+        }
+
+        new_game(2024, 0, 2);
+        join(0);
+        join(1);
+        let mut seen = Vec::new();
+        for f in 0..300u32 {
+            set_input(0, (f * 13) & 0x3f);
+            set_input(1, (f * 7) & 0x1f);
+            step();
+            if f % 60 == 0 {
+                seen.push((checksum_lo(), checksum_hi()));
+            }
+        }
+        assert_eq!(expected, seen);
+    }
+
+    #[test]
+    fn a_player_can_be_handed_a_boss() {
+        new_game(77, 0, 2);
+        join(0);
+        // The default world has dungeons, so there is a boss to take.
+        assert_eq!(possess_boss(1), 1);
+        assert_eq!(player_role(1), 1);
+        assert_eq!(player_active(1), 1);
     }
 
     #[test]
