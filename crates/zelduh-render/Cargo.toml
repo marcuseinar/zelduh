@@ -3,6 +3,7 @@ name = "zelduh-render"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Software renderer for Zelduh: draws a world into a 160x144 framebuffer"
 
 [dependencies]
 zelduh-core = { path = "../zelduh-core" }

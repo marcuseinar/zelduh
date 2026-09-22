@@ -3,5 +3,7 @@ name = "zelduh-assets"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Tile, sprite and palette data for Zelduh, including ROM and image importers"
 
 [dependencies]
+zelduh-core = { path = "../zelduh-core" }

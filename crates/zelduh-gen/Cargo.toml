@@ -3,6 +3,7 @@ name = "zelduh-gen"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Random world generation for Zelduh: overworlds and dungeons"
 
 [dependencies]
 zelduh-core = { path = "../zelduh-core" }
