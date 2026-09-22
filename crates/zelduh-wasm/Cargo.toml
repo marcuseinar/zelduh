@@ -3,6 +3,7 @@ name = "zelduh-wasm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "The browser entry point: a plain wasm module with no JS bindings generator"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

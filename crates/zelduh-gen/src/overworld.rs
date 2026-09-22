@@ -107,28 +107,49 @@ fn paint_terrain(level: &mut Level, seed: u64) {
             let edge = (tx.min(w - 1 - tx)).min(ty.min(h - 1 - ty));
             let elev = if edge < 3 { elev - (3 - edge) * 260 } else { elev };
 
+            // Elevation decides sea, shore and mountain; moisture decides what
+            // grows in between, with the detail octave breaking up the edges so
+            // biomes interlock rather than sitting in clean bands.
             let t = if elev < 250 {
                 tile::WATER
-            } else if elev < 310 {
+            } else if elev < 305 {
                 tile::WATER_SHALLOW
-            } else if elev < 350 {
+            } else if elev < 345 {
                 tile::SAND
             } else if elev > 820 {
                 tile::CLIFF
-            } else if elev > 780 {
+            } else if elev > 770 {
                 tile::ROCK
-            } else if moist > 700 && detail > 350 {
-                tile::TREE
-            } else if moist > 620 && detail > 640 {
-                tile::GRASS_TALL
-            } else if moist < 250 {
-                tile::SAND
-            } else if detail > 970 {
-                tile::BUSH
-            } else if detail < 30 {
-                tile::ROCK
-            } else if moist > 480 && (820..860).contains(&detail) {
+            } else if moist > 660 {
+                // Woodland, with clearings where the detail noise dips.
+                if detail > 280 {
+                    tile::TREE
+                } else {
+                    tile::GRASS_TALL
+                }
+            } else if moist > 520 {
+                if detail > 600 {
+                    tile::GRASS_TALL
+                } else if detail < 60 {
+                    tile::BUSH
+                } else {
+                    tile::GRASS
+                }
+            } else if moist < 300 {
+                // Dry ground: patchy sand rather than an unbroken desert.
+                if detail > 520 {
+                    tile::SAND
+                } else if detail < 70 {
+                    tile::ROCK
+                } else {
+                    tile::GRASS
+                }
+            } else if (820..870).contains(&detail) {
                 tile::FLOWERS
+            } else if detail > 960 {
+                tile::BUSH
+            } else if detail < 40 {
+                tile::ROCK
             } else {
                 tile::GRASS
             };
@@ -269,14 +290,19 @@ fn decorate(level: &mut Level, rng: &mut Rng, seed: u64) {
                 continue;
             }
             let n = noise::value(seed ^ 0x55, tx, ty, 2);
-            // Bushes like to grow beside paths.
+            // Bushes like to grow beside paths, which is also where a hero
+            // wants something to cut.
             let beside_path = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                 .iter()
                 .any(|(dx, dy)| level.map.get(tx + dx, ty + dy) == tile::PATH);
-            if beside_path && n > 900 && rng.chance(1, 3) {
+            if beside_path && n > 620 && rng.chance(1, 2) {
                 level.map.set(tx, ty, tile::BUSH);
-            } else if n < 25 && rng.chance(1, 4) {
+            } else if n > 880 && rng.chance(1, 3) {
+                level.map.set(tx, ty, tile::BUSH);
+            } else if n < 110 && rng.chance(1, 3) {
                 level.map.set(tx, ty, tile::ROCK);
+            } else if (400..430).contains(&n) && rng.chance(1, 4) {
+                level.map.set(tx, ty, tile::FLOWERS);
             }
         }
     }

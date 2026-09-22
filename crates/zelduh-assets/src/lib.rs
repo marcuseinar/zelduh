@@ -52,8 +52,12 @@ pub fn sniff(name: &str, data: &[u8]) -> Option<FileKind> {
     if lower.ends_with(".chr") || lower.ends_with(".2bpp") || lower.ends_with(".bin") {
         return Some(FileKind::RawTiles);
     }
-    // A text file that parses cleanly enough is probably a profile.
-    if data.is_ascii() && !data.is_empty() {
+    // A text file is probably a profile -- but only if it really is text.
+    // Plenty of binary files are technically all-ASCII.
+    let printable = data
+        .iter()
+        .all(|b| b.is_ascii_graphic() || matches!(b, b' ' | b'\n' | b'\r' | b'\t'));
+    if printable && data.iter().any(|b| b.is_ascii_alphabetic()) {
         return Some(FileKind::Profile);
     }
     None
@@ -214,6 +218,13 @@ mod tests {
         assert_eq!(sniff("tiles.chr", &[0u8; 64]), Some(FileKind::RawTiles));
         assert_eq!(sniff("art.bmp", b"BM\0\0"), Some(FileKind::Bmp));
         assert_eq!(sniff("map.zprofile", b"name x"), Some(FileKind::Profile));
+        assert_eq!(sniff("notes", b"terrain BUSH 1 1 1 1"), Some(FileKind::Profile));
+    }
+
+    #[test]
+    fn binary_rubbish_is_not_mistaken_for_text() {
+        assert_eq!(sniff("mystery", &[0u8, 1, 2, 3]), None);
+        assert_eq!(sniff("mystery", &[]), None);
     }
 
     #[test]

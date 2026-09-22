@@ -116,6 +116,23 @@ pub fn draw_cell(fb: &mut Framebuffer, pack: &AssetPack, cell: Cell, x: i32, y: 
     }
 }
 
+/// Draws one 16x16 terrain tile as its four cells.
+pub fn draw_metatile(
+    fb: &mut Framebuffer,
+    pack: &AssetPack,
+    t: u8,
+    x: i32,
+    y: i32,
+    transparent: bool,
+) {
+    let meta = *pack.metatile(t);
+    for (i, cell) in meta.iter().enumerate() {
+        let ox = (i as i32 % 2) * 8;
+        let oy = (i as i32 / 2) * 8;
+        draw_cell(fb, pack, *cell, x + ox, y + oy, transparent);
+    }
+}
+
 /// Draws a whole sprite with an optional flip applied to the whole image.
 pub fn draw_sprite(fb: &mut Framebuffer, pack: &AssetPack, sprite: &Sprite, x: i32, y: i32, flip: u8) {
     let cols = sprite.cols as i32;
@@ -199,13 +216,16 @@ pub fn render(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: usi
     for ty in first_ty..first_ty + rows {
         for tx in first_tx..first_tx + cols {
             let t = level.map.get(tx, ty);
-            let meta = pack.metatile(t);
             let sx = tx * TILE_PX - cam_x;
             let sy = ty * TILE_PX - cam_y + HUD_H;
-            for (i, cell) in meta.iter().enumerate() {
-                let ox = (i as i32 % 2) * 8;
-                let oy = (i as i32 / 2) * 8;
-                draw_cell(fb, pack, *cell, sx + ox, sy + oy, false);
+            // Objects such as bushes and rocks are drawn over whatever the
+            // level uses for ground, so they sit correctly on grass indoors
+            // and on stone in a dungeon.
+            if pack.is_overlay(t) {
+                draw_metatile(fb, pack, level.ground, sx, sy, false);
+                draw_metatile(fb, pack, t, sx, sy, true);
+            } else {
+                draw_metatile(fb, pack, t, sx, sy, false);
             }
         }
     }
@@ -266,12 +286,7 @@ fn draw_entity(fb: &mut Framebuffer, pack: &AssetPack, world: &World, e: &Entity
 
     // A carried tile is drawn as its terrain art.
     if e.kind == Kind::Carried {
-        let meta = *pack.metatile(e.data[0] as u8);
-        for (i, cell) in meta.iter().enumerate() {
-            let ox = (i as i32 % 2) * 8;
-            let oy = (i as i32 / 2) * 8;
-            draw_cell(fb, pack, *cell, x + ox, y - z + oy, true);
-        }
+        draw_metatile(fb, pack, e.data[0] as u8, x, y - z, true);
     }
 }
 

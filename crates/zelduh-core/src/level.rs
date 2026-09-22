@@ -238,6 +238,9 @@ pub struct Level {
     pub entrance: V2,
     /// Dungeon number, or 0 for the overworld.
     pub dungeon: u8,
+    /// The tile drawn underneath anything that stands on the ground, so a bush
+    /// on a dungeon floor is not drawn sitting on a patch of grass.
+    pub ground: Tile,
 }
 
 impl Level {
@@ -251,6 +254,10 @@ impl Level {
             spawns: Vec::new(),
             entrance: V2::from_px(ROOM_PX_W / 2, ROOM_PX_H / 2),
             dungeon: 0,
+            ground: match kind {
+                LevelKind::Overworld => tile::GRASS,
+                _ => tile::FLOOR,
+            },
         }
     }
 

@@ -147,6 +147,10 @@ pub struct AssetPack {
     pub palettes: Vec<Palette>,
     /// One entry per logical terrain tile id.
     pub metatiles: Vec<MetaTile>,
+    /// True for terrain that is an object standing on the ground rather than
+    /// the ground itself. These are drawn over the level's ground tile, with
+    /// colour 0 left transparent.
+    pub overlay: Vec<bool>,
     /// One entry per [`SpriteId`].
     pub sprites: Vec<Sprite>,
 }
@@ -160,6 +164,7 @@ impl AssetPack {
             tiles: vec![BLANK],
             palettes: DEFAULT_PALETTES.to_vec(),
             metatiles: vec![[Cell::BLANK; 4]; tile::COUNT],
+            overlay: vec![false; tile::COUNT],
             sprites: vec![Sprite::default(); SpriteId::N],
         }
     }
@@ -183,6 +188,12 @@ impl AssetPack {
     pub fn metatile(&self, t: u8) -> &MetaTile {
         const FALLBACK: MetaTile = [Cell::BLANK; 4];
         self.metatiles.get(t as usize).unwrap_or(&FALLBACK)
+    }
+
+    /// True when this terrain is drawn over the level's ground tile.
+    #[inline]
+    pub fn is_overlay(&self, t: u8) -> bool {
+        self.overlay.get(t as usize).copied().unwrap_or(false)
     }
 
     /// The art for a sprite.
@@ -308,6 +319,13 @@ impl PackBuilder {
             _ => panic!("terrain art must be 8x8 or 16x16"),
         };
         self.pack.metatiles[id as usize] = meta;
+    }
+
+    /// Registers a 16x16 object that stands on the ground: colour 0 is left
+    /// transparent and the level's ground shows through.
+    pub fn object(&mut self, id: u8, rows: &[&str], palette: u8) {
+        self.terrain(id, rows, palette);
+        self.pack.overlay[id as usize] = true;
     }
 
     /// Registers a sprite from art.

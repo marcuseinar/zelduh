@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Zelduh</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>&#9876;</text></svg>">
+</head>
+<body>
+<div id="shell">
+  <header>
+    <h1>Zelduh</h1>
+    <p class="tagline">A randomly generated top&#8209;down adventure, in the shape of the Game&nbsp;Boy Zeldas.</p>
+  </header>
+
+  <div id="stage">
+    <canvas id="screen" width="160" height="144" aria-label="Game screen"></canvas>
+    <div id="overlay" hidden><p id="overlay-text"></p></div>
+  </div>
+
+  <div id="touch" hidden aria-hidden="true">
+    <div class="dpad">
+      <button class="pad up" data-button="up"></button>
+      <button class="pad left" data-button="left"></button>
+      <button class="pad right" data-button="right"></button>
+      <button class="pad down" data-button="down"></button>
+    </div>
+    <div class="buttons">
+      <button class="round b" data-button="b">B</button>
+      <button class="round a" data-button="a">A</button>
+    </div>
+  </div>
+
+  <section id="panel">
+    <div class="row">
+      <label for="seed">World seed</label>
+      <input id="seed" type="text" inputmode="numeric" value="1" size="10">
+      <button id="new-world">New world</button>
+      <button id="random-seed">Random</button>
+    </div>
+
+    <div class="row">
+      <label for="scale">Zoom</label>
+      <input id="scale" type="range" min="1" max="6" step="1" value="3">
+      <span id="scale-label">3x</span>
+      <label class="check"><input id="sound" type="checkbox" checked> Sound</label>
+    </div>
+
+    <div id="drop" class="row drop">
+      <p><strong>Graphics</strong> &mdash; drop a Game&nbsp;Boy ROM, a tile dump, an image or a
+         <code>.zprofile</code> here, or <label for="file" class="link">choose a file</label>.</p>
+      <input id="file" type="file" hidden>
+      <p id="asset-status">Using the built&#8209;in art.</p>
+      <button id="reset-assets">Back to built&#8209;in art</button>
+    </div>
+
+    <details>
+      <summary>Controls</summary>
+      <table>
+        <tr><th>Move</th><td>Arrow keys or WASD</td></tr>
+        <tr><th>A &mdash; sword</th><td>Z, J, or Space</td></tr>
+        <tr><th>B &mdash; second item</th><td>X or K</td></tr>
+        <tr><th>Swap items</th><td>Enter</td></tr>
+        <tr><th>Run (with boots)</th><td>Shift</td></tr>
+        <tr><th>Pause</th><td>P</td></tr>
+      </table>
+      <p>A gamepad works too. On a touch screen the on&#8209;screen pad appears automatically.</p>
+    </details>
+
+    <details>
+      <summary>About the graphics</summary>
+      <p>The art that ships with the game is original. Nothing from any commercial cartridge is
+         included or downloaded.</p>
+      <p>If you own a Game&nbsp;Boy game, you can drop its ROM here and the engine will read tiles
+         out of your own file to draw the world with. Nothing is uploaded: the file is read in
+         this tab and never leaves your machine.</p>
+      <p>A cartridge does not record where its graphics live, so a plain ROM gives a remix rather
+         than a faithful tileset. A <code>.zprofile</code> file pins that down &mdash; it says which
+         tiles to import and what each one should be used for.</p>
+    </details>
+
+    <p id="stats" class="stats"></p>
+  </section>
+</div>
+<script src="main.js" type="module"></script>
+</body>
+</html>
