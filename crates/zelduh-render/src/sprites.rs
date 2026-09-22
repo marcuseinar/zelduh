@@ -19,7 +19,14 @@ pub fn for_entity(world: &World, e: &Entity) -> Option<(SpriteId, u8)> {
         Kind::Keese => (if e.anim & 1 == 0 { Keese0 } else { Keese1 }, 0),
         Kind::Tektite => (if e.anim & 1 == 0 { Tektite0 } else { Tektite1 }, 0),
         Kind::Stalfos => (if e.anim & 1 == 0 { Stalfos0 } else { Stalfos1 }, side_flip),
-        Kind::Boss => (if (world.frame / 12) % 2 == 0 { Boss0 } else { Boss1 }, 0),
+        Kind::Boss => (
+            if (world.frame / 12).is_multiple_of(2) {
+                Boss0
+            } else {
+                Boss1
+            },
+            0,
+        ),
         Kind::Rock => (Rock, 0),
         Kind::Fireball => (Fireball, 0),
         Kind::Arrow => match e.dir {
@@ -32,7 +39,14 @@ pub fn for_entity(world: &World, e: &Entity) -> Option<(SpriteId, u8)> {
             Dir::Up | Dir::Down => (BeamVert, 0),
             _ => (BeamSide, 0),
         },
-        Kind::Boomerang => (Boomerang, if (world.frame / 3) % 2 == 0 { 0 } else { FLIP_X }),
+        Kind::Boomerang => (
+            Boomerang,
+            if (world.frame / 3).is_multiple_of(2) {
+                0
+            } else {
+                FLIP_X
+            },
+        ),
         Kind::Bomb => (Bomb, 0),
         Kind::Explosion => (Explosion, 0),
         Kind::SwordSwing => match e.dir {
@@ -48,7 +62,14 @@ pub fn for_entity(world: &World, e: &Entity) -> Option<(SpriteId, u8)> {
         Kind::Key => (Key, 0),
         Kind::BombPickup => (BombPickup, 0),
         Kind::ArrowPickup => (ArrowPickup, 0),
-        Kind::Fairy => (Fairy, if (world.frame / 6) % 2 == 0 { 0 } else { FLIP_X }),
+        Kind::Fairy => (
+            Fairy,
+            if (world.frame / 6).is_multiple_of(2) {
+                0
+            } else {
+                FLIP_X
+            },
+        ),
         Kind::HeartPiece => (HeartPiece, 0),
         Kind::Triforce => (Triforce, 0),
         Kind::Chest => (if e.state == 0 { ChestClosed } else { ChestOpen }, 0),
@@ -127,7 +148,7 @@ mod tests {
     use super::*;
     use zelduh_core::level::{Level, LevelKind};
     use zelduh_core::tiles::tile;
-    use zelduh_core::{V2, World};
+    use zelduh_core::{World, V2};
 
     fn world() -> World {
         let mut lv = Level::new(LevelKind::Overworld, 2, 2, tile::GRASS);

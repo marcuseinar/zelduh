@@ -24,6 +24,9 @@ pub const MAX_PLAYERS: usize = 4;
 pub const TICK_HZ: u64 = 60;
 /// How many past checksums to remember when looking for divergence.
 const CHECK_HISTORY: usize = 600;
+/// Size of the fixed part of a welcome message, before the snapshot: the
+/// message id, slot, player count, seed, frame and snapshot length.
+pub const WELCOME_HEADER: usize = 1 + 1 + 1 + 8 + 4 + 4;
 
 /// Messages the server sends.
 pub mod s2c {
@@ -47,7 +50,7 @@ pub enum Role {
     Boss,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Slot {
     occupied: bool,
     buttons: u16,
@@ -58,19 +61,6 @@ struct Slot {
     /// Set when this slot should leave the world on the next tick.
     pending_leave: bool,
     out: Option<Sender<Vec<u8>>>,
-}
-
-impl Default for Slot {
-    fn default() -> Self {
-        Slot {
-            occupied: false,
-            buttons: 0,
-            pending_join: false,
-            pending_boss: false,
-            pending_leave: false,
-            out: None,
-        }
-    }
 }
 
 /// One running game.
@@ -104,10 +94,10 @@ impl Session {
 
     /// A bit per occupied slot.
     pub fn occupancy(&self) -> u8 {
-        self.slots
-            .iter()
-            .enumerate()
-            .fold(0u8, |acc, (i, s)| if s.occupied { acc | 1 << i } else { acc })
+        self.slots.iter().enumerate().fold(
+            0u8,
+            |acc, (i, s)| if s.occupied { acc | 1 << i } else { acc },
+        )
     }
 
     /// Takes the next free slot for a new connection.
@@ -133,7 +123,8 @@ impl Session {
             self.world.save()
         };
 
-        let mut msg = vec![s2c::WELCOME];
+        let mut msg = Vec::with_capacity(WELCOME_HEADER + snapshot.len());
+        msg.push(s2c::WELCOME);
         msg.push(slot as u8);
         msg.push(MAX_PLAYERS as u8);
         msg.extend_from_slice(&self.seed.to_le_bytes());
@@ -279,10 +270,6 @@ impl Session {
     }
 }
 
-/// Size of the fixed part of a welcome message, before the snapshot: the
-/// message id, slot, player count, seed, frame and snapshot length.
-pub const WELCOME_HEADER: usize = 1 + 1 + 1 + 8 + 4 + 4;
-
 /// Builds a short text message for the client's status line.
 pub fn info(text: &str) -> Vec<u8> {
     let mut msg = vec![s2c::INFO];
@@ -331,9 +318,7 @@ mod tests {
         let mut s = Session::new(4);
         let (tx, _rx) = channel();
         let (_, welcome) = s.join(tx, Role::Hero).unwrap();
-        let snapshot_len = |w: &[u8]| {
-            u32::from_le_bytes([w[15], w[16], w[17], w[18]]) as usize
-        };
+        let snapshot_len = |w: &[u8]| u32::from_le_bytes([w[15], w[16], w[17], w[18]]) as usize;
         assert_eq!(snapshot_len(&welcome), 0, "nothing has happened yet");
 
         for _ in 0..30 {
@@ -407,8 +392,7 @@ mod tests {
 
         let (tx, _rx) = channel();
         let (slot, welcome) = server.join(tx, Role::Hero).unwrap();
-        let len =
-            u32::from_le_bytes([welcome[15], welcome[16], welcome[17], welcome[18]]) as usize;
+        let len = u32::from_le_bytes([welcome[15], welcome[16], welcome[17], welcome[18]]) as usize;
         let snapshot = &welcome[WELCOME_HEADER..WELCOME_HEADER + len];
         let mut client = World::load(snapshot).expect("the snapshot should load");
         assert_eq!(client.checksum(), server.world.checksum());
@@ -444,7 +428,11 @@ mod tests {
         let (tx, _rx) = channel();
         let (slot, _) = s.join(tx, Role::Boss).unwrap();
         let msg = s.tick();
-        assert_eq!(msg[7] & (1 << slot), 1 << slot, "the boss bit should be set");
+        assert_eq!(
+            msg[7] & (1 << slot),
+            1 << slot,
+            "the boss bit should be set"
+        );
         assert_eq!(s.world.players[slot].role, zelduh_core::Role::Boss);
     }
 
@@ -456,7 +444,9 @@ mod tests {
         }
         let good = s.world.checksum();
         assert!(s.check(10, good).is_none());
-        let reply = s.check(10, good ^ 1).expect("a mismatch should be reported");
+        let reply = s
+            .check(10, good ^ 1)
+            .expect("a mismatch should be reported");
         assert_eq!(reply[0], s2c::DESYNC);
         assert_eq!(s.desyncs, 1);
         assert!(s.check(9999, good).is_none(), "unknown frames are ignored");

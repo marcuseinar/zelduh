@@ -63,7 +63,7 @@ pub fn info(data: &[u8]) -> RomInfo {
     let cart_type = data.get(0x147).copied().unwrap_or(0);
     let size_code = data.get(0x148).copied().unwrap_or(0);
     let declared_size = if size_code <= 8 {
-        32 * 1024usize << size_code
+        (32 * 1024usize) << size_code
     } else {
         0
     };

@@ -25,8 +25,8 @@ impl Palette {
     /// Converts to the 0xAABBGGRR words a browser canvas wants.
     pub fn to_abgr(&self) -> [u32; 4] {
         let mut out = [0u32; 4];
-        for i in 0..4 {
-            out[i] = rgb_to_abgr(self.0[i]);
+        for (slot, color) in out.iter_mut().zip(self.0.iter()) {
+            *slot = rgb_to_abgr(*color);
         }
         out
     }
@@ -120,8 +120,7 @@ mod tests {
     fn sprite_palettes_reserve_index_zero() {
         for i in [pal::HERO, pal::ENEMY_RED, pal::GOLD, pal::HEART] {
             assert_eq!(
-                DEFAULT_PALETTES[i as usize].0[0],
-                0,
+                DEFAULT_PALETTES[i as usize].0[0], 0,
                 "sprite palette {i} must keep index 0 for transparency"
             );
         }

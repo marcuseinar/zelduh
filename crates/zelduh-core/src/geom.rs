@@ -23,11 +23,15 @@ impl V2 {
         V2 { x: px(x), y: px(y) }
     }
 
+    // Named rather than operators: fixed-point vectors are added all over the
+    // simulation, and `a.add(b)` reads unambiguously next to `a.scale(n, d)`.
+    #[allow(clippy::should_implement_trait)]
     #[inline]
     pub fn add(self, o: V2) -> V2 {
         V2::new(self.x + o.x, self.y + o.y)
     }
 
+    #[allow(clippy::should_implement_trait)]
     #[inline]
     pub fn sub(self, o: V2) -> V2 {
         V2::new(self.x - o.x, self.y - o.y)

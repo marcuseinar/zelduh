@@ -195,7 +195,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 2,
             speed: 96,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | DESPAWN_FAR,
-            ..d()
         },
         Moblin => KindInfo {
             body_w: 13,
@@ -204,7 +203,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 2,
             speed: 128,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | DESPAWN_FAR,
-            ..d()
         },
         Zol => KindInfo {
             body_w: 12,
@@ -213,7 +211,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 2,
             speed: 64,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | DESPAWN_FAR,
-            ..d()
         },
         Keese => KindInfo {
             body_w: 10,
@@ -222,7 +219,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 2,
             speed: 192,
             flags: VULNERABLE | TOUCH_HURTS | FLYING | DESPAWN_FAR,
-            ..d()
         },
         Tektite => KindInfo {
             body_w: 12,
@@ -231,7 +227,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 2,
             speed: 224,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | DESPAWN_FAR,
-            ..d()
         },
         Stalfos => KindInfo {
             body_w: 12,
@@ -240,7 +235,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 4,
             speed: 144,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | DESPAWN_FAR,
-            ..d()
         },
         Boss => KindInfo {
             body_w: 28,
@@ -249,7 +243,6 @@ pub fn info(kind: Kind) -> KindInfo {
             touch_damage: 4,
             speed: 128,
             flags: VULNERABLE | TOUCH_HURTS | SOLID_BODY | BOSS,
-            ..d()
         },
         Rock | Fireball => KindInfo {
             body_w: 6,

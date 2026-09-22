@@ -53,12 +53,7 @@ impl Config {
 /// Builds a complete world. Level 0 is always the overworld.
 pub fn generate(cfg: Config) -> Vec<Level> {
     let dungeons_wanted = cfg.dungeons.min(8);
-    let mut ow = overworld::generate(
-        cfg.seed,
-        cfg.overworld.0,
-        cfg.overworld.1,
-        dungeons_wanted,
-    );
+    let mut ow = overworld::generate(cfg.seed, cfg.overworld.0, cfg.overworld.1, dungeons_wanted);
 
     let mut levels = Vec::with_capacity(1 + dungeons_wanted);
     let mut dungeons = Vec::new();
@@ -128,7 +123,10 @@ mod tests {
         assert_eq!(levels[0].links.len(), 3);
         for link in &levels[0].links {
             let to = &levels[link.to_level as usize];
-            assert_eq!(levels[0].map.get(link.from.0, link.from.1), tile::STAIRS_DOWN);
+            assert_eq!(
+                levels[0].map.get(link.from.0, link.from.1),
+                tile::STAIRS_DOWN
+            );
             assert!(
                 to.links.iter().any(|back| back.to_level == 0),
                 "a dungeon with no way out"

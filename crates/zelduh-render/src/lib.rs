@@ -68,10 +68,7 @@ impl Framebuffer {
     pub fn as_bytes(&self) -> &[u8] {
         // Safe: u32 and u8 have no padding or invalid bit patterns.
         unsafe {
-            std::slice::from_raw_parts(
-                self.pixels.as_ptr() as *const u8,
-                self.pixels.len() * 4,
-            )
+            std::slice::from_raw_parts(self.pixels.as_ptr() as *const u8, self.pixels.len() * 4)
         }
     }
 }
@@ -86,7 +83,14 @@ impl Default for Framebuffer {
 ///
 /// `transparent` decides whether colour 0 is a hole (sprites) or a real
 /// colour (terrain).
-pub fn draw_cell(fb: &mut Framebuffer, pack: &AssetPack, cell: Cell, x: i32, y: i32, transparent: bool) {
+pub fn draw_cell(
+    fb: &mut Framebuffer,
+    pack: &AssetPack,
+    cell: Cell,
+    x: i32,
+    y: i32,
+    transparent: bool,
+) {
     if cell.is_blank() {
         return;
     }
@@ -134,7 +138,14 @@ pub fn draw_metatile(
 }
 
 /// Draws a whole sprite with an optional flip applied to the whole image.
-pub fn draw_sprite(fb: &mut Framebuffer, pack: &AssetPack, sprite: &Sprite, x: i32, y: i32, flip: u8) {
+pub fn draw_sprite(
+    fb: &mut Framebuffer,
+    pack: &AssetPack,
+    sprite: &Sprite,
+    x: i32,
+    y: i32,
+    flip: u8,
+) {
     let cols = sprite.cols as i32;
     let rows = sprite.rows as i32;
     for cy in 0..rows {
@@ -142,8 +153,16 @@ pub fn draw_sprite(fb: &mut Framebuffer, pack: &AssetPack, sprite: &Sprite, x: i
             // Flipping the image means both mirroring each cell and swapping
             // which cell sits where.
             let (sx, sy) = (
-                if flip & at::FLIP_X != 0 { cols - 1 - cx } else { cx },
-                if flip & at::FLIP_Y != 0 { rows - 1 - cy } else { cy },
+                if flip & at::FLIP_X != 0 {
+                    cols - 1 - cx
+                } else {
+                    cx
+                },
+                if flip & at::FLIP_Y != 0 {
+                    rows - 1 - cy
+                } else {
+                    cy
+                },
             );
             let mut cell = sprite.cell(sx as usize, sy as usize);
             cell.flip ^= flip;
@@ -183,7 +202,14 @@ pub fn draw_text(fb: &mut Framebuffer, text: &str, x: i32, y: i32, color: u32) {
 }
 
 /// Draws text with a one-pixel shadow so it stays readable over any terrain.
-pub fn draw_text_shadowed(fb: &mut Framebuffer, text: &str, x: i32, y: i32, color: u32, shadow: u32) {
+pub fn draw_text_shadowed(
+    fb: &mut Framebuffer,
+    text: &str,
+    x: i32,
+    y: i32,
+    color: u32,
+    shadow: u32,
+) {
     draw_text(fb, text, x + 1, y + 1, shadow);
     draw_text(fb, text, x, y, color);
 }
@@ -261,7 +287,14 @@ pub fn render(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: usi
 }
 
 /// Draws one entity, with its shadow if it is off the ground.
-fn draw_entity(fb: &mut Framebuffer, pack: &AssetPack, world: &World, e: &Entity, cam_x: i32, cam_y: i32) {
+fn draw_entity(
+    fb: &mut Framebuffer,
+    pack: &AssetPack,
+    world: &World,
+    e: &Entity,
+    cam_x: i32,
+    cam_y: i32,
+) {
     let Some((id, flip)) = sprites::for_entity(world, e) else {
         return;
     };
@@ -278,7 +311,7 @@ fn draw_entity(fb: &mut Framebuffer, pack: &AssetPack, world: &World, e: &Entity
     }
 
     // A hurt entity flashes: skip drawing on alternate frames.
-    if e.iframes > 0 && (world.frame / 2) % 2 == 0 {
+    if e.iframes > 0 && (world.frame / 2).is_multiple_of(2) {
         return;
     }
     let sprite = pack.sprite(id).clone();
@@ -438,6 +471,6 @@ mod tests {
         let mut fb = Framebuffer::new();
         fb.clear(0);
         draw_text(&mut fb, "ZELDUH", 10, 10, 0xffff_ffff);
-        assert!(fb.pixels.iter().any(|p| *p == 0xffff_ffff));
+        assert!(fb.pixels.contains(&0xffff_ffff));
     }
 }

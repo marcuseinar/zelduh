@@ -39,9 +39,9 @@ pub fn value(seed: u64, x: i32, y: i32, scale: i32) -> i32 {
     let c = hash(seed, gx, gy + 1);
     let d = hash(seed, gx + 1, gy + 1);
 
-    let top = a + ((b - a) * tx >> 10);
-    let bottom = c + ((d - c) * tx >> 10);
-    (top + ((bottom - top) * ty >> 10)).clamp(0, 1023)
+    let top = a + (((b - a) * tx) >> 10);
+    let bottom = c + (((d - c) * tx) >> 10);
+    (top + (((bottom - top) * ty) >> 10)).clamp(0, 1023)
 }
 
 /// Two octaves of value noise, which gives large shapes with some detail.

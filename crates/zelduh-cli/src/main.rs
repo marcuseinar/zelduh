@@ -180,7 +180,12 @@ fn cmd_shot(opts: &Options) -> Result<(), String> {
 
     let mut fb = Framebuffer::new();
     zelduh_render::render(&mut fb, &world, &pack, 0);
-    let data = png::encode(&fb.pixels, fb.width as usize, fb.height as usize, opts.scale);
+    let data = png::encode(
+        &fb.pixels,
+        fb.width as usize,
+        fb.height as usize,
+        opts.scale,
+    );
     std::fs::write(&opts.out, &data).map_err(|e| format!("{}: {e}", opts.out))?;
     println!(
         "wrote {} ({}x{}, seed {}, frame {})",
@@ -204,7 +209,7 @@ fn cmd_sheet(opts: &Options) -> Result<(), String> {
         .filter(|t| pack.metatile(*t).iter().any(|c| !c.is_blank()))
         .collect();
     let sprite_count = SpriteId::N;
-    let rows = (terrain.len() + cols - 1) / cols + (sprite_count + cols - 1) / cols + 2;
+    let rows = terrain.len().div_ceil(cols) + sprite_count.div_ceil(cols) + 2;
 
     let mut fb = Framebuffer {
         width: (cols * cell) as i32,
@@ -238,7 +243,7 @@ fn cmd_sheet(opts: &Options) -> Result<(), String> {
         );
     }
 
-    y += ((terrain.len() + cols - 1) / cols) * cell + 10;
+    y += terrain.len().div_ceil(cols) * cell + 10;
     zelduh_render::draw_text(&mut fb, "SPRITES", 4, y as i32, 0xffff_ffff);
     y += 10;
     for i in 0..sprite_count {
@@ -263,7 +268,12 @@ fn cmd_sheet(opts: &Options) -> Result<(), String> {
         );
     }
 
-    let data = png::encode(&fb.pixels, fb.width as usize, fb.height as usize, opts.scale.min(3));
+    let data = png::encode(
+        &fb.pixels,
+        fb.width as usize,
+        fb.height as usize,
+        opts.scale.min(3),
+    );
     std::fs::write(&opts.out, &data).map_err(|e| format!("{}: {e}", opts.out))?;
     println!(
         "wrote {} ({} terrain tiles, {} sprites, {} unique 8x8 tiles)",
@@ -300,7 +310,11 @@ fn cmd_map(opts: &Options) -> Result<(), String> {
     );
     for ty in 0..level.map.h() {
         if ty % ROOM_H == 0 {
-            let _ = writeln!(out, "{}", "-".repeat(level.map.w() as usize + level.rooms_w() as usize));
+            let _ = writeln!(
+                out,
+                "{}",
+                "-".repeat(level.map.w() as usize + level.rooms_w() as usize)
+            );
         }
         for tx in 0..level.map.w() {
             if tx % ROOM_W == 0 {
@@ -368,7 +382,11 @@ fn cmd_rom(opts: &Options) -> Result<(), String> {
     let data = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let info = zelduh_assets::rom::info(&data);
     println!("file            {path}");
-    println!("size            {} KiB ({} banks)", data.len() / 1024, info.banks);
+    println!(
+        "size            {} KiB ({} banks)",
+        data.len() / 1024,
+        info.banks
+    );
     println!("title           {:?}", info.title);
     println!("nintendo logo   {}", yes_no(info.has_logo));
     println!("header checksum {}", yes_no(info.header_checksum_ok));

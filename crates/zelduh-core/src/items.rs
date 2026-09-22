@@ -209,16 +209,17 @@ impl Inventory {
 
     /// Cycles the given button through the owned active items.
     pub fn cycle_equipped(&mut self, slot: usize) {
-        let usable: Vec<Item> = self
-            .owned_items()
-            .filter(|i| !i.is_passive())
-            .collect();
+        let usable: Vec<Item> = self.owned_items().filter(|i| !i.is_passive()).collect();
         if usable.is_empty() {
             return;
         }
         let slot = slot & 1;
         let cur = self.equipped[slot];
-        let start = usable.iter().position(|i| *i == cur).map(|p| p + 1).unwrap_or(0);
+        let start = usable
+            .iter()
+            .position(|i| *i == cur)
+            .map(|p| p + 1)
+            .unwrap_or(0);
         for n in 0..usable.len() {
             let cand = usable[(start + n) % usable.len()];
             if cand != self.equipped[slot ^ 1] {

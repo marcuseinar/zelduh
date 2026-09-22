@@ -164,9 +164,13 @@ mod tests {
         let mut m = Map::new(1, 1, tile::GRASS);
         m.fill_rect(4, 0, 1, 8, tile::WALL);
         let mut e = octorok_at(40, 40);
-        let hit = move_by(&mut m.clone(), &mut e, V2::new(px(40), 0));
+        let hit = move_by(&m.clone(), &mut e, V2::new(px(40), 0));
         assert!(hit.x, "should be blocked by the wall");
-        assert!(to_px(e.pos.x) <= 64 - 6, "stopped short of x=64: {}", to_px(e.pos.x));
+        assert!(
+            to_px(e.pos.x) <= 64 - 6,
+            "stopped short of x=64: {}",
+            to_px(e.pos.x)
+        );
     }
 
     #[test]

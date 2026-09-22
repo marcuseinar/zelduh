@@ -15,7 +15,7 @@ pub mod profile;
 pub mod rom;
 pub mod tile;
 
-pub use pack::{AssetPack, Sprite, SpriteId, Source};
+pub use pack::{AssetPack, Source, Sprite, SpriteId};
 pub use palette::{pal, Palette};
 pub use tile::{Cell, Tile8};
 
@@ -218,7 +218,10 @@ mod tests {
         assert_eq!(sniff("tiles.chr", &[0u8; 64]), Some(FileKind::RawTiles));
         assert_eq!(sniff("art.bmp", b"BM\0\0"), Some(FileKind::Bmp));
         assert_eq!(sniff("map.zprofile", b"name x"), Some(FileKind::Profile));
-        assert_eq!(sniff("notes", b"terrain BUSH 1 1 1 1"), Some(FileKind::Profile));
+        assert_eq!(
+            sniff("notes", b"terrain BUSH 1 1 1 1"),
+            Some(FileKind::Profile)
+        );
     }
 
     #[test]

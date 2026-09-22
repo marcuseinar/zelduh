@@ -158,7 +158,10 @@ impl Map {
     /// Tile at a world pixel position.
     #[inline]
     pub fn at_world(&self, p: V2) -> Tile {
-        self.get(to_px(p.x).div_euclid(TILE_PX), to_px(p.y).div_euclid(TILE_PX))
+        self.get(
+            to_px(p.x).div_euclid(TILE_PX),
+            to_px(p.y).div_euclid(TILE_PX),
+        )
     }
 
     /// Fills a tile-space rectangle.

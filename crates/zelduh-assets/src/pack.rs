@@ -267,8 +267,14 @@ impl PackBuilder {
     pub fn art(&mut self, rows: &[&str], palette: u8) -> Sprite {
         let h = rows.len();
         let w = rows.iter().map(|r| r.chars().count()).max().unwrap_or(0);
-        assert!(h % 8 == 0 && h > 0, "art must be a multiple of 8 rows tall");
-        assert!(w % 8 == 0 && w > 0, "art must be a multiple of 8 columns wide");
+        assert!(
+            h.is_multiple_of(8) && h > 0,
+            "art must be a multiple of 8 rows tall"
+        );
+        assert!(
+            w % 8 == 0 && w > 0,
+            "art must be a multiple of 8 columns wide"
+        );
         let (cols, nrows) = (w / 8, h / 8);
         let mut cells = Vec::with_capacity(cols * nrows);
         for cy in 0..nrows {

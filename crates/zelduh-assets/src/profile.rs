@@ -177,7 +177,9 @@ pub fn parse(text: &str) -> Profile {
                         p.errors.push((n + 1, "bad colour".to_string()));
                     }
                 }
-                _ => p.errors.push((n + 1, "palette needs a slot and 4 colours".into())),
+                _ => p
+                    .errors
+                    .push((n + 1, "palette needs a slot and 4 colours".into())),
             },
             "import" => {
                 let offset = args.first().and_then(|a| number(a));
@@ -195,9 +197,9 @@ pub fn parse(text: &str) -> Profile {
                 }
             }
             "terrain" => {
-                let id = args.first().and_then(|a| {
-                    tile_by_name(a).or_else(|| number(a).map(|v| v as u8))
-                });
+                let id = args
+                    .first()
+                    .and_then(|a| tile_by_name(a).or_else(|| number(a).map(|v| v as u8)));
                 match id {
                     Some(id) if args.len() >= 5 => {
                         let mut cells = [Cell::BLANK; 4];
@@ -215,7 +217,9 @@ pub fn parse(text: &str) -> Profile {
                         }
                     }
                     Some(_) => p.errors.push((n + 1, "terrain needs 4 cells".into())),
-                    None => p.errors.push((n + 1, format!("unknown terrain {}", args[0]))),
+                    None => p
+                        .errors
+                        .push((n + 1, format!("unknown terrain {}", args[0]))),
                 }
             }
             "sprite" => {

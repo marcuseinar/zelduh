@@ -122,10 +122,10 @@ pub(crate) fn update(world: &mut World, pi: usize) {
         speed = WALK * 3 / 4;
     }
     if e.state == pstate::ATTACK {
-        speed = speed / 2;
+        speed /= 2;
     }
     if world.players[pi].inv.has(Item::Boots) && input.held(button::SELECT) {
-        speed = speed * 2;
+        speed *= 2;
     }
 
     let mut delta = V2::new(speed * ax, speed * ay);
@@ -432,7 +432,10 @@ pub fn use_item(world: &mut World, pi: usize, item: Item, slot: usize) {
                 a.dir = e.dir;
                 a.owner = eid;
                 a.flags |= eflag::PLAYER_OWNED;
-                a.vel = e.dir.unit().with_length(crate::entity::info(Kind::Arrow).speed);
+                a.vel = e
+                    .dir
+                    .unit()
+                    .with_length(crate::entity::info(Kind::Arrow).speed);
                 a.timer = 60;
             }
             world.events.sound(Sfx::Shoot);
@@ -537,7 +540,10 @@ fn lift(world: &mut World, pi: usize) {
         world.say(pi, "TOO HEAVY");
         return;
     }
-    world.level_mut(e.level).map.set(tx, ty, tiles::destroyed(t));
+    world
+        .level_mut(e.level)
+        .map
+        .set(tx, ty, tiles::destroyed(t));
     let eid = world.players[pi].entity;
     let id = world.spawn(Kind::Carried, e.level, tile_center(tx, ty));
     if let Some(c) = world.entities.get_mut(id) {
@@ -758,7 +764,10 @@ mod tests {
         w.step();
         w.set_input(0, button::A);
         w.step();
-        assert!(w.players[0].carrying.is_none(), "it should have been thrown");
+        assert!(
+            w.players[0].carrying.is_none(),
+            "it should have been thrown"
+        );
     }
 
     #[test]

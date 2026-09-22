@@ -1353,13 +1353,7 @@ fn objects(b: &mut PackBuilder) {
     b.sprite(
         SpriteId::BeamVert,
         &[
-            "...##...",
-            "..####..",
-            ".#-##-#.",
-            "#--##--#",
-            "#--##--#",
-            ".#-##-#.",
-            "..####..",
+            "...##...", "..####..", ".#-##-#.", "#--##--#", "#--##--#", ".#-##-#.", "..####..",
             "...##...",
         ],
         pal::BONE,
@@ -1367,13 +1361,7 @@ fn objects(b: &mut PackBuilder) {
     b.sprite(
         SpriteId::BeamSide,
         &[
-            "........",
-            "..#..#..",
-            ".#-##-#.",
-            "#--##--#",
-            "#--##--#",
-            ".#-##-#.",
-            "..#..#..",
+            "........", "..#..#..", ".#-##-#.", "#--##--#", "#--##--#", ".#-##-#.", "..#..#..",
             "........",
         ],
         pal::BONE,
@@ -1810,8 +1798,8 @@ mod tests {
     fn identical_art_is_shared() {
         let p = pack();
         // Far fewer unique tiles than cells, because flat areas repeat.
-        let cells: usize = p.sprites.iter().map(|s| s.cells.len()).sum::<usize>()
-            + p.metatiles.len() * 4;
+        let cells: usize =
+            p.sprites.iter().map(|s| s.cells.len()).sum::<usize>() + p.metatiles.len() * 4;
         assert!(
             p.tile_count() < cells,
             "expected tile sharing: {} tiles for {cells} cells",

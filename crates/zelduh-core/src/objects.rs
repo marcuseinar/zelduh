@@ -23,10 +23,7 @@ pub(crate) fn update(world: &mut World, idx: usize) {
             // The blade tracks the hand that swings it.
             if let Some(owner) = world.entities.get(e.owner) {
                 let (dx, dy) = owner.dir.step();
-                e.pos = V2::new(
-                    owner.pos.x + px(dx * 12),
-                    owner.pos.y + px(dy * 12) - px(4),
-                );
+                e.pos = V2::new(owner.pos.x + px(dx * 12), owner.pos.y + px(dy * 12) - px(4));
                 e.dir = owner.dir;
                 e.level = owner.level;
                 e.z = owner.z;

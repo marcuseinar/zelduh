@@ -13,7 +13,7 @@ mod session;
 mod ws;
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -73,7 +73,10 @@ fn main() {
         }
     };
     println!("zelduh-server listening on http://localhost:{port}");
-    println!("  world seed {seed}, up to {} players", session::MAX_PLAYERS);
+    println!(
+        "  world seed {seed}, up to {} players",
+        session::MAX_PLAYERS
+    );
     println!("  serving {}", dir.display());
 
     for stream in listener.incoming() {
@@ -207,7 +210,13 @@ fn websocket(
         let _ = ws::write_frame(&mut out, ws::Opcode::Close, &[]);
         return Ok(());
     };
-    println!("player {slot} joined as {role:?}");
+    {
+        let s = lock(&session);
+        println!(
+            "player {slot} joined as {role:?} ({} playing)",
+            s.player_count()
+        );
+    }
 
     // One thread does all the writing, so the game loop never blocks on a
     // slow socket.
@@ -348,18 +357,24 @@ fn write_response(
     stream.flush()
 }
 
-#[allow(dead_code)]
-fn unused_read(_: &mut dyn Read) {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn content_types_cover_what_the_page_needs() {
-        assert_eq!(content_type(Path::new("a/index.html")), "text/html; charset=utf-8");
+        assert_eq!(
+            content_type(Path::new("a/index.html")),
+            "text/html; charset=utf-8"
+        );
         assert_eq!(content_type(Path::new("zelduh.wasm")), "application/wasm");
-        assert_eq!(content_type(Path::new("main.js")), "text/javascript; charset=utf-8");
-        assert_eq!(content_type(Path::new("mystery.bin")), "application/octet-stream");
+        assert_eq!(
+            content_type(Path::new("main.js")),
+            "text/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            content_type(Path::new("mystery.bin")),
+            "application/octet-stream"
+        );
     }
 }

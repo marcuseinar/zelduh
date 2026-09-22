@@ -42,7 +42,13 @@ pub fn generate(seed: u64, rooms_w: i32, rooms_h: i32, dungeons: usize) -> Overw
     // The hero starts in the middle, which keeps the first walk in any
     // direction interesting.
     let start = (rooms_w / 2, rooms_h / 2);
-    let graph = carve(&mut rng, rooms_w, rooms_h, start, (rooms_w * rooms_h / 4) as u32);
+    let graph = carve(
+        &mut rng,
+        rooms_w,
+        rooms_h,
+        start,
+        (rooms_w * rooms_h / 4) as u32,
+    );
     carve_paths(&mut level, &graph, seed);
 
     // Flatten the starting screen so nobody wakes up inside a lake.
@@ -105,7 +111,11 @@ fn paint_terrain(level: &mut Level, seed: u64) {
 
             // The map is ringed by water so the world has an edge.
             let edge = (tx.min(w - 1 - tx)).min(ty.min(h - 1 - ty));
-            let elev = if edge < 3 { elev - (3 - edge) * 260 } else { elev };
+            let elev = if edge < 3 {
+                elev - (3 - edge) * 260
+            } else {
+                elev
+            };
 
             // Elevation decides sea, shore and mountain; moisture decides what
             // grows in between, with the detail octave breaking up the edges so
@@ -260,7 +270,10 @@ fn place_dungeon_entrances(
     }
     // Prefer rooms far from the start, then take a random spread of them.
     candidates.sort_by_key(|(x, y)| -graph.depth_at(*x, *y));
-    let pool = candidates.len().min(count * 3).max(count.min(candidates.len()));
+    let pool = candidates
+        .len()
+        .min(count * 3)
+        .max(count.min(candidates.len()));
     let mut pool: Vec<(i32, i32)> = candidates.into_iter().take(pool).collect();
     rng.shuffle(&mut pool);
 
@@ -295,9 +308,9 @@ fn decorate(level: &mut Level, rng: &mut Rng, seed: u64) {
             let beside_path = [(1, 0), (-1, 0), (0, 1), (0, -1)]
                 .iter()
                 .any(|(dx, dy)| level.map.get(tx + dx, ty + dy) == tile::PATH);
-            if beside_path && n > 620 && rng.chance(1, 2) {
-                level.map.set(tx, ty, tile::BUSH);
-            } else if n > 880 && rng.chance(1, 3) {
+            let bushy = if beside_path { 620 } else { 880 };
+            let odds = if beside_path { 2 } else { 3 };
+            if n > bushy && rng.chance(1, odds) {
                 level.map.set(tx, ty, tile::BUSH);
             } else if n < 110 && rng.chance(1, 3) {
                 level.map.set(tx, ty, tile::ROCK);
@@ -504,10 +517,6 @@ mod tests {
         for t in ow.level.map.raw() {
             kinds.insert(*t);
         }
-        assert!(
-            kinds.len() >= 6,
-            "expected varied terrain, got {:?}",
-            kinds
-        );
+        assert!(kinds.len() >= 6, "expected varied terrain, got {:?}", kinds);
     }
 }

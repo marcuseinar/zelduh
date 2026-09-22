@@ -123,9 +123,8 @@ impl<'a> Reader<'a> {
     }
 
     pub fn u64(&mut self) -> Option<u64> {
-        self.take(8).map(|s| {
-            u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]])
-        })
+        self.take(8)
+            .map(|s| u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
     }
 
     pub fn bytes(&mut self) -> Option<&'a [u8]> {
@@ -381,9 +380,10 @@ fn read_player(r: &mut Reader) -> Option<Player> {
     inv.sword_level = r.u8()?;
     inv.heart_pieces = r.u8()?;
 
-    let mut input = Input::default();
-    input.buttons = r.u16()?;
-    input.prev = r.u16()?;
+    let input = Input {
+        buttons: r.u16()?,
+        prev: r.u16()?,
+    };
 
     let role = if r.u8()? == 1 { Role::Boss } else { Role::Hero };
     let level = r.u16()?;
@@ -556,8 +556,11 @@ impl World {
         for (id, e) in self.entities.iter() {
             mix(id.idx as u64 | (id.gen as u64) << 16, &mut h);
             mix(e.kind as u64, &mut h);
-            mix(e.pos.x as u32 as u64 | (e.pos.y as u32 as u64) << 32, &mut h);
-            mix(e.hp as u64 as u64 & 0xffff, &mut h);
+            mix(
+                e.pos.x as u32 as u64 | (e.pos.y as u32 as u64) << 32,
+                &mut h,
+            );
+            mix(e.hp as u64 & 0xffff, &mut h);
             mix(e.state as u64 | (e.timer as u64) << 8, &mut h);
         }
         for p in &self.players {
@@ -590,7 +593,14 @@ mod tests {
         w.join(0);
         w.join(1);
         for f in 0..200u16 {
-            w.set_input(0, if f % 40 < 20 { button::RIGHT } else { button::A });
+            w.set_input(
+                0,
+                if f % 40 < 20 {
+                    button::RIGHT
+                } else {
+                    button::A
+                },
+            );
             w.set_input(1, button::DOWN);
             w.step();
         }
@@ -647,9 +657,9 @@ mod tests {
         let a = played_world();
         let mut b = World::load(&a.save()).unwrap();
         assert_eq!(a.checksum(), b.checksum());
-        b.entities
-            .at_mut(1)
-            .map(|e| e.pos = e.pos.add(V2::from_px(1, 0)));
+        if let Some(e) = b.entities.at_mut(1) {
+            e.pos = e.pos.add(V2::from_px(1, 0));
+        }
         assert_ne!(a.checksum(), b.checksum());
     }
 

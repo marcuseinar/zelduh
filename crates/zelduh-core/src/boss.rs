@@ -219,9 +219,7 @@ fn slam(world: &mut World, pi: usize, at: V2) {
     let hits: Vec<usize> = world
         .entities
         .iter()
-        .filter(|(_, e)| {
-            e.kind == Kind::Player && e.level == level && e.hurt_box().overlaps(&area)
-        })
+        .filter(|(_, e)| e.kind == Kind::Player && e.level == level && e.hurt_box().overlaps(&area))
         .map(|(_, e)| e.player as usize)
         .collect();
     for target in hits {

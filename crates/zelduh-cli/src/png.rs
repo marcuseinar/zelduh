@@ -9,7 +9,11 @@ fn crc32(data: &[u8]) -> u32 {
     for (i, entry) in table.iter_mut().enumerate() {
         let mut c = i as u32;
         for _ in 0..8 {
-            c = if c & 1 != 0 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            c = if c & 1 != 0 {
+                0xedb8_8320 ^ (c >> 1)
+            } else {
+                c >> 1
+            };
         }
         *entry = c;
     }
@@ -103,7 +107,10 @@ mod tests {
     #[test]
     fn output_starts_with_the_png_signature() {
         let png = encode(&[0xff00_00ff; 4], 2, 2, 1);
-        assert_eq!(&png[0..8], &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]);
+        assert_eq!(
+            &png[0..8],
+            &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]
+        );
         assert_eq!(&png[12..16], b"IHDR");
         assert!(png.ends_with(&crc32(b"IEND").to_be_bytes()));
     }

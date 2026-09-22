@@ -75,7 +75,7 @@ pub fn decode_2bpp(bytes: &[u8]) -> Tile8 {
 /// Encodes a tile back to the Game Boy's 16-byte 2bpp form.
 pub fn encode_2bpp(t: &Tile8) -> [u8; 16] {
     let mut out = [0u8; 16];
-    for y in 0..8 {
+    for (y, row) in out.chunks_mut(2).enumerate() {
         let (mut lo, mut hi) = (0u8, 0u8);
         for x in 0..8 {
             let v = t[y * 8 + x] & 3;
@@ -83,8 +83,8 @@ pub fn encode_2bpp(t: &Tile8) -> [u8; 16] {
             lo |= (v & 1) << bit;
             hi |= ((v >> 1) & 1) << bit;
         }
-        out[y * 2] = lo;
-        out[y * 2 + 1] = hi;
+        row[0] = lo;
+        row[1] = hi;
     }
     out
 }
@@ -102,8 +102,8 @@ mod tests {
     #[test]
     fn two_bpp_roundtrips() {
         let mut t = BLANK;
-        for i in 0..64 {
-            t[i] = (i % 4) as u8;
+        for (i, px) in t.iter_mut().enumerate() {
+            *px = (i % 4) as u8;
         }
         assert_eq!(decode_2bpp(&encode_2bpp(&t)), t);
     }

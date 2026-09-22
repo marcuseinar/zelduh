@@ -370,12 +370,8 @@ impl World {
         if !e.can_be_hurt() {
             return false;
         }
-        let (pos, is_boss, is_player, player_idx) = (
-            e.pos,
-            e.has(eflag::BOSS),
-            e.kind == Kind::Player,
-            e.player,
-        );
+        let (pos, is_boss, is_player, player_idx) =
+            (e.pos, e.has(eflag::BOSS), e.kind == Kind::Player, e.player);
         if is_player {
             return self.hurt_player(player_idx as usize, amount, from);
         }
@@ -416,7 +412,8 @@ impl World {
             p.timer = 18;
         }
         if kind.is_enemy() {
-            self.events.sound(if is_boss { Sfx::BossDie } else { Sfx::EnemyDie });
+            self.events
+                .sound(if is_boss { Sfx::BossDie } else { Sfx::EnemyDie });
             if is_boss {
                 self.events.push(Event::BossDefeated { level });
                 self.events.push(Event::Shake { frames: 30 });
@@ -910,7 +907,7 @@ mod tests {
         let mut a = test_world();
         let mut b = test_world();
         for f in 0..300u16 {
-            let buttons = (f as u16 * 37) & 0x3f;
+            let buttons = (f * 37) & 0x3f;
             a.set_input(0, buttons);
             b.set_input(0, buttons);
             a.step();
@@ -937,7 +934,10 @@ mod tests {
         let mut w = test_world();
         let id = w.spawn(Kind::Moblin, 0, V2::from_px(100, 64));
         assert!(w.damage(id, 1, V2::from_px(90, 64), 0));
-        assert!(!w.damage(id, 1, V2::from_px(90, 64), 0), "still invulnerable");
+        assert!(
+            !w.damage(id, 1, V2::from_px(90, 64), 0),
+            "still invulnerable"
+        );
         assert_eq!(w.entities.get(id).unwrap().hp, 2);
     }
 

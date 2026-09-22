@@ -25,13 +25,19 @@ pub struct Dungeon {
 
 /// Generates dungeon number `index`.
 pub fn generate(seed: u64, index: u8, rooms_w: i32, rooms_h: i32) -> Dungeon {
-    let mut rng = Rng::new(seed ^ 0xd0_0d_0000_0000 ^ (index as u64) << 32);
+    let mut rng = Rng::new(seed ^ 0x0000_d00d_0000_0000 ^ ((index as u64) << 32));
     let mut level = Level::new(LevelKind::Dungeon, rooms_w, rooms_h, tile::WALL_DUNGEON);
     level.dungeon = index + 1;
 
     // Enter from the bottom middle, the way a dungeon usually opens.
     let start = (rooms_w / 2, rooms_h - 1);
-    let graph = carve(&mut rng, rooms_w, rooms_h, start, (rooms_w * rooms_h / 6) as u32);
+    let graph = carve(
+        &mut rng,
+        rooms_w,
+        rooms_h,
+        start,
+        (rooms_w * rooms_h / 6) as u32,
+    );
 
     for ry in 0..rooms_h {
         for rx in 0..rooms_w {
@@ -58,7 +64,6 @@ pub fn generate(seed: u64, index: u8, rooms_w: i32, rooms_h: i32) -> Dungeon {
         open_doorway(&mut level, rx, ry, dir, tile::DOOR_BOSS);
     }
 
-    let mut level = level;
     let exit = place_exit(&mut level, start);
     let arrival = V2::from_px(
         exit.0 * TILE_PX + TILE_PX / 2,
@@ -68,13 +73,7 @@ pub fn generate(seed: u64, index: u8, rooms_w: i32, rooms_h: i32) -> Dungeon {
 
     decorate(&mut level, &graph, &mut rng, start, boss_room);
     populate(
-        &mut level,
-        &graph,
-        &mut rng,
-        start,
-        boss_room,
-        locked,
-        index,
+        &mut level, &graph, &mut rng, start, boss_room, locked, index,
     );
 
     for ry in 0..rooms_h {
@@ -215,7 +214,13 @@ fn decorate_tile(level: &mut Level, rx: i32, ry: i32, tx: i32, ty: i32, t: u8) {
 }
 
 /// Adds pots, blocks and the occasional pit.
-fn decorate(level: &mut Level, graph: &RoomGraph, rng: &mut Rng, start: (i32, i32), boss: (i32, i32)) {
+fn decorate(
+    level: &mut Level,
+    graph: &RoomGraph,
+    rng: &mut Rng,
+    start: (i32, i32),
+    boss: (i32, i32),
+) {
     for ry in 0..graph.h {
         for rx in 0..graph.w {
             if (rx, ry) == start {
@@ -397,9 +402,8 @@ fn populate(
 pub fn reachable_without_keys(level: &Level, from: (i32, i32)) -> Vec<bool> {
     let (w, h) = (level.map.w(), level.map.h());
     let mut seen = vec![false; (w * h) as usize];
-    let passable = |t: u8| {
-        !tiles::blocks_walk(t) && !tiles::any(t, flag::WATER | flag::HARMFUL | flag::PIT)
-    };
+    let passable =
+        |t: u8| !tiles::blocks_walk(t) && !tiles::any(t, flag::WATER | flag::HARMFUL | flag::PIT);
     if !level.map.in_bounds(from.0, from.1) {
         return seen;
     }
@@ -443,12 +447,7 @@ mod tests {
     fn the_key_can_always_be_got_before_the_lock() {
         for seed in 0..30u64 {
             let d = generate(seed, 0, 4, 4);
-            let has_lock = d
-                .level
-                .map
-                .raw()
-                .iter()
-                .any(|t| *t == tile::DOOR_LOCKED);
+            let has_lock = d.level.map.raw().contains(&tile::DOOR_LOCKED);
             if !has_lock {
                 continue;
             }
@@ -484,11 +483,14 @@ mod tests {
         let mut found = 0;
         for seed in 0..10u64 {
             let d = generate(seed, 0, 4, 4);
-            if d.level.map.raw().iter().any(|t| *t == tile::DOOR_BOSS) {
+            if d.level.map.raw().contains(&tile::DOOR_BOSS) {
                 found += 1;
             }
         }
-        assert!(found >= 8, "most dungeons should gate their boss: {found}/10");
+        assert!(
+            found >= 8,
+            "most dungeons should gate their boss: {found}/10"
+        );
     }
 
     #[test]
