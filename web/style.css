@@ -7,6 +7,11 @@
   --accent: #7fd04a;
   --accent-dim: #4d7f2c;
   --radius: 10px;
+  /* Room for a notch or a home indicator. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
   color-scheme: dark;
 }
 
@@ -16,22 +21,28 @@
    a `display` set here would stay on screen after being hidden in script. */
 [hidden] { display: none !important; }
 
+html, body { height: 100%; }
+
 body {
   margin: 0;
-  padding: 16px;
+  padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right))
+           calc(12px + var(--safe-bottom)) calc(12px + var(--safe-left));
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex;
   justify-content: center;
+  /* A game should not scroll away under a thumb, or bounce at its edges. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 #shell {
   width: 100%;
-  max-width: 720px;
+  max-width: 760px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 header { text-align: center; }
@@ -46,7 +57,17 @@ h1 {
 
 .tagline { margin: 4px 0 0; color: var(--dim); font-size: 14px; }
 
+/* ---------------------------------------------------------------- the game */
+
+#play {
+  display: grid;
+  grid-template-areas: "screen";
+  justify-items: center;
+  gap: 14px;
+}
+
 #stage {
+  grid-area: screen;
   position: relative;
   display: flex;
   justify-content: center;
@@ -54,15 +75,17 @@ h1 {
   background: #000;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 12px;
-  overflow: hidden;
+  padding: 10px;
+  max-width: 100%;
 }
 
 canvas {
   image-rendering: pixelated;
+  image-rendering: crisp-edges;
   display: block;
   background: #000;
-  /* Sized in script so the pixel grid stays square at whole-number zoom. */
+  touch-action: none;
+  /* Sized in script: whole-number zoom on a desktop, fitted on a phone. */
 }
 
 #overlay {
@@ -73,18 +96,83 @@ canvas {
   background: rgba(8, 9, 14, 0.82);
   text-align: center;
   padding: 24px;
+  border-radius: var(--radius);
 }
 
-#overlay p { margin: 0; max-width: 24em; color: var(--ink); }
+#overlay p { margin: 0; max-width: 24em; }
+
+/* On-screen controls. Hidden until the script finds a touch screen. */
+.control-side { display: none; }
+
+#pad {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, #252836 0%, #191b24 70%);
+  border: 1px solid var(--line);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pad-ring {
+  position: absolute;
+  inset: 22%;
+  border: 1px dashed #3a3f52;
+  border-radius: 50%;
+}
+
+.pad-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  border: 2px solid var(--accent);
+  transition: background 0.1s;
+  pointer-events: none;
+}
+
+#pad.active .pad-knob { background: var(--accent); }
+
+#face { display: flex; gap: 18px; align-items: center; }
+
+.round {
+  width: 74px;
+  height: 74px;
+  border-radius: 50%;
+  font-size: 20px;
+  font-weight: 700;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.round.b { transform: translateY(26px); }
+.round:active, .round.down { background: var(--accent); color: #0d0e14; }
+
+#minor { display: flex; gap: 10px; justify-content: center; margin-top: 40px; }
+
+.tiny {
+  font-size: 12px;
+  padding: 6px 10px;
+  letter-spacing: 0.08em;
+}
+
+/* ------------------------------------------------------------------ panel */
 
 #panel {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px 16px;
+  padding: 4px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
 }
 
 .row {
@@ -92,20 +180,22 @@ canvas {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  margin: 10px 0;
 }
 
 label { color: var(--dim); font-size: 14px; }
-
 .check { display: flex; align-items: center; gap: 6px; }
 
-input[type="text"] {
+input[type="text"], select {
   background: #0d0e14;
   border: 1px solid var(--line);
   color: var(--ink);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 8px;
   font: inherit;
-  font-variant-numeric: tabular-nums;
+  font-size: 16px; /* anything smaller makes iOS zoom the page on focus */
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
 input[type="range"] { accent-color: var(--accent); flex: 1 1 120px; }
@@ -114,18 +204,18 @@ button {
   background: var(--accent-dim);
   color: var(--ink);
   border: 1px solid var(--accent);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: 8px;
+  padding: 8px 14px;
   font: inherit;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 button:hover { background: var(--accent); color: #0d0e14; }
 button:active { transform: translateY(1px); }
 
 .drop {
-  flex-direction: column;
-  align-items: stretch;
   border: 1px dashed var(--line);
   border-radius: 8px;
   padding: 12px;
@@ -133,32 +223,24 @@ button:active { transform: translateY(1px); }
 }
 
 .drop.over { border-color: var(--accent); background: rgba(127, 208, 74, 0.08); }
-.drop p { margin: 0; font-size: 14px; color: var(--dim); }
-.drop strong { color: var(--ink); }
+.drop p { margin: 0 0 8px; font-size: 14px; color: var(--dim); }
 
 .link { color: var(--accent); text-decoration: underline; cursor: pointer; }
 
 #asset-status { color: var(--accent); font-variant-numeric: tabular-nums; }
-
-#net-status { color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; }
+#net-status { color: var(--dim); font-size: 14px; margin: 6px 0; }
 #net-status.live { color: var(--accent); }
 #net-status.bad { color: #e8895a; }
 
-select {
-  background: #0d0e14;
-  border: 1px solid var(--line);
-  color: var(--ink);
-  border-radius: 6px;
-  padding: 6px 8px;
-  font: inherit;
-}
+details { border-top: 1px solid var(--line); padding: 8px 0; }
+details:first-of-type { border-top: 0; }
+summary { cursor: pointer; color: var(--dim); padding: 4px 0; }
+summary:hover { color: var(--ink); }
 
-details { border-top: 1px solid var(--line); padding-top: 10px; }
-summary { cursor: pointer; color: var(--dim); }
-details p, details table { font-size: 14px; color: var(--dim); }
-details table { border-collapse: collapse; margin: 8px 0; }
-details th { text-align: left; padding-right: 16px; font-weight: 600; color: var(--ink); }
-details td { color: var(--dim); }
+.note { font-size: 13px; color: var(--dim); margin: 8px 0; }
+table { border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+th { text-align: left; padding-right: 16px; font-weight: 600; color: var(--ink); }
+td { color: var(--dim); }
 
 code {
   background: #0d0e14;
@@ -169,51 +251,53 @@ code {
 }
 
 .stats {
-  margin: 0;
+  margin: 8px 0 0;
   color: var(--dim);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
-
-/* On-screen controls, shown only where there is a touch screen. */
-#touch {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  user-select: none;
-  touch-action: none;
-}
-
-.dpad { position: relative; width: 132px; height: 132px; }
-
-.pad {
-  position: absolute;
-  width: 44px;
-  height: 44px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-.pad.up { left: 44px; top: 0; }
-.pad.down { left: 44px; top: 88px; }
-.pad.left { left: 0; top: 44px; }
-.pad.right { left: 88px; top: 44px; }
-
-.buttons { display: flex; gap: 16px; align-items: center; }
-
-.round {
-  width: 58px;
-  height: 58px;
-  border-radius: 50%;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.round.b { transform: translateY(14px); }
 
 @media (max-width: 480px) {
-  body { padding: 8px; }
   h1 { font-size: 22px; }
+}
+
+/* Phones and tablets: show the controls and let the screen fill the width. */
+@media (pointer: coarse) {
+  body { padding-top: calc(6px + var(--safe-top)); }
+  header { display: none; }
+  .control-side { display: flex; flex-direction: column; align-items: center; }
+
+  #play {
+    grid-template-areas:
+      "screen screen"
+      "pad    face";
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    justify-items: center;
+  }
+
+  #pad-wrap { grid-area: pad; justify-self: start; }
+  #face-wrap { grid-area: face; justify-self: end; }
+  #stage { padding: 0; border-width: 0; border-radius: 0; width: 100%; }
+  canvas { width: 100%; height: auto; }
+
+  /* Settings stay out of the way until asked for. */
+  #panel { font-size: 14px; }
+}
+
+/* A phone held sideways: controls either side of the screen. */
+@media (pointer: coarse) and (orientation: landscape) {
+  #shell { max-width: none; gap: 8px; }
+  #play {
+    grid-template-areas: "pad screen face";
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+  }
+  canvas { width: auto; max-width: 100%; }
+  /* Shrink the frame to the screen rather than letting it stretch the column. */
+  #stage { width: auto; justify-self: center; }
+  #pad { width: 132px; height: 132px; }
+  .round { width: 62px; height: 62px; }
+  #panel { display: none; }
 }

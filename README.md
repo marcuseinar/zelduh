@@ -4,9 +4,18 @@ A randomly generated, multiplayer, top-down action adventure in the shape of the
 Game Boy Zelda games. Written in Rust, compiled to WebAssembly, played in a
 browser.
 
+**Play it: https://marcuseinar.github.io/zelduh/**
+
+It works on a phone: the on-screen pad handles diagonals, the screen fills the
+display in either orientation, and the page can be added to a home screen and
+played offline. Every world comes from a seed, so `#seed=1234` on the end of
+the address is a place you can send someone.
+
+To run it yourself:
+
 ```
-./build.sh                                  # build the wasm module
-cargo run --release -p zelduh-server         # serve the page and host a game
+./build.sh                                   # build the wasm module
+cargo run --release -p zelduh-server          # serve the page and host a game
 # then open http://localhost:8080
 ```
 
@@ -26,6 +35,9 @@ hand into a framebuffer rather than on the GPU, so the pixel grid stays exact.
 Every world is generated from a seed, so a number is a shareable place. Put one
 in the address bar (`#seed=1234`) or type it into the page.
 
+- **On a phone**, the pad on the left is a thumb stick: it reads diagonals, and
+  you can slide between directions without lifting off. **FULL** goes
+  fullscreen; **SWAP** exchanges your A and B items.
 - **Move** with the arrow keys or WASD
 - **A** (sword, or whatever is in the A slot) with Z, J or Space
 - **B** (second item) with X or K
@@ -34,6 +46,23 @@ in the address bar (`#seed=1234`) or type it into the page.
 
 As a boss: **A** slams everything standing next to you, **B** throws a ring of
 fire.
+
+## Deploying
+
+The site is static -- an HTML page, a script, a stylesheet and a wasm module --
+so GitHub Pages serves it as-is. The workflow in
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds the module
+and publishes `web/` on every push.
+
+It needs one setting turned on once, in **Settings -> Pages -> Build and
+deployment -> Source: GitHub Actions**. Until that is done the workflow will
+run and fail at the deploy step.
+
+Multiplayer is the one part static hosting cannot do, because it needs
+`zelduh-server` running somewhere. Put that server's address in the "Play
+together" box on the page and it will connect to it. A page served over https
+needs a `wss://` address, so the server needs to be behind TLS -- any reverse
+proxy will do.
 
 ## Milestones
 

@@ -1,4 +1,5 @@
 /target
+# Built by build.sh and by the Pages workflow, not committed.
 /web/zelduh.wasm
 /dist
 *.gb

@@ -28,6 +28,7 @@ USAGE:
 COMMANDS:
     shot      Render one frame to a PNG
     sheet     Render every tile and sprite in the asset pack to a PNG
+    icon      Render an app icon to a PNG
     map       Print a generated level as text
     rom       Report what is inside a Game Boy ROM
     bench     Time the simulation
@@ -53,6 +54,7 @@ fn main() -> ExitCode {
     let result = match args[0].as_str() {
         "shot" => cmd_shot(&opts),
         "sheet" => cmd_sheet(&opts),
+        "icon" => cmd_icon(&opts),
         "map" => cmd_map(&opts),
         "rom" => cmd_rom(&opts),
         "bench" => cmd_bench(&opts),
@@ -289,6 +291,44 @@ fn cmd_sheet(opts: &Options) -> Result<(), String> {
 /// parser already keeps in enum order.
 fn sprite_id(i: usize) -> SpriteId {
     zelduh_assets::profile::SPRITE_NAMES[i].1
+}
+
+/// Renders the app icon: the hero on a plain background, scaled up.
+///
+/// The icon is drawn from the same art the game uses rather than being a
+/// separate file to keep in step with it.
+fn cmd_icon(opts: &Options) -> Result<(), String> {
+    let pack = opts.pack()?;
+    // A 32x32 board gives the sprite a margin on every side.
+    const SIZE: i32 = 32;
+    let mut fb = Framebuffer {
+        width: SIZE,
+        height: SIZE,
+        pixels: vec![0; (SIZE * SIZE) as usize],
+    };
+    let background =
+        zelduh_assets::palette::rgb_to_abgr(pack.palette(zelduh_assets::palette::pal::GRASS).0[2]);
+    fb.clear(background);
+    let sprite = pack.sprite(SpriteId::HeroDown0).clone();
+    zelduh_render::draw_sprite(
+        &mut fb,
+        &pack,
+        &sprite,
+        (SIZE - sprite.width()) / 2,
+        (SIZE - sprite.height()) / 2,
+        0,
+    );
+    // The scale option doubles as the icon's size in units of 32 pixels.
+    let scale = opts.scale.max(1);
+    let data = png::encode(&fb.pixels, SIZE as usize, SIZE as usize, scale);
+    std::fs::write(&opts.out, &data).map_err(|e| format!("{}: {e}", opts.out))?;
+    println!(
+        "wrote {} ({}x{})",
+        opts.out,
+        SIZE as usize * scale,
+        SIZE as usize * scale
+    );
+    Ok(())
 }
 
 fn cmd_map(opts: &Options) -> Result<(), String> {

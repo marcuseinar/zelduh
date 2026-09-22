@@ -15,6 +15,8 @@ const BUTTON = {
   select: 1 << 7,
 };
 
+BUTTON.DPAD_ALL = BUTTON.up | BUTTON.down | BUTTON.left | BUTTON.right;
+
 const KEYS = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
@@ -48,10 +50,17 @@ const dom = {
   assetStatus: document.getElementById('asset-status'),
   resetAssets: document.getElementById('reset-assets'),
   stats: document.getElementById('stats'),
-  touch: document.getElementById('touch'),
   role: document.getElementById('role'),
   connect: document.getElementById('connect'),
   netStatus: document.getElementById('net-status'),
+  server: document.getElementById('server'),
+  stage: document.getElementById('stage'),
+  play: document.getElementById('play'),
+  pad: document.getElementById('pad'),
+  padKnob: document.querySelector('.pad-knob'),
+  padWrap: document.getElementById('pad-wrap'),
+  faceWrap: document.getElementById('face-wrap'),
+  fullscreen: document.getElementById('fullscreen'),
 };
 
 const ctx = dom.canvas.getContext('2d', { alpha: false });
@@ -236,20 +245,120 @@ window.addEventListener('keyup', (e) => {
 // Holding a key and then clicking away leaves the button stuck down.
 window.addEventListener('blur', () => { held = 0; });
 
-// On-screen controls for touch screens.
-if (matchMedia('(pointer: coarse)').matches) {
-  dom.touch.hidden = false;
-  dom.touch.removeAttribute('aria-hidden');
-  for (const el of dom.touch.querySelectorAll('[data-button]')) {
+// ------------------------------------------------------------ touch controls
+
+// How far from the middle of the pad counts as a deliberate push, as a
+// fraction of its radius. Below this the hero stands still.
+const PAD_DEADZONE = 0.3;
+// A direction is included when the thumb is within this many degrees of it,
+// which leaves a generous wedge for each diagonal.
+const PAD_SPREAD = 67.5;
+
+/** Turns a thumb position on the pad into a set of direction bits. */
+function padDirections(dx, dy, radius) {
+  const distance = Math.hypot(dx, dy);
+  if (distance < radius * PAD_DEADZONE) return 0;
+  // Screen coordinates run down the page, so negate y to get a normal angle.
+  const angle = (Math.atan2(-dy, dx) * 180) / Math.PI;
+  const near = (target) => {
+    const diff = Math.abs(((angle - target + 540) % 360) - 180);
+    return diff <= PAD_SPREAD;
+  };
+  let mask = 0;
+  if (near(90)) mask |= BUTTON.up;
+  if (near(-90)) mask |= BUTTON.down;
+  if (near(180)) mask |= BUTTON.left;
+  if (near(0)) mask |= BUTTON.right;
+  return mask;
+}
+
+/** Moves the pad's knob to follow the thumb. */
+function moveKnob(dx, dy, radius) {
+  const distance = Math.hypot(dx, dy);
+  const limit = radius * 0.55;
+  const scale = distance > limit ? limit / distance : 1;
+  dom.padKnob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+}
+
+function setupTouchControls() {
+  let padPointer = null;
+
+  const trackPad = (e) => {
+    const rect = dom.pad.getBoundingClientRect();
+    const radius = rect.width / 2;
+    const dx = e.clientX - (rect.left + radius);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+    // Replace the whole d-pad at once so opposite directions cannot stick.
+    held = (held & ~BUTTON.DPAD_ALL) | padDirections(dx, dy, radius);
+    moveKnob(dx, dy, radius);
+  };
+
+  dom.pad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    audio.unlock();
+    padPointer = e.pointerId;
+    dom.pad.setPointerCapture(e.pointerId);
+    dom.pad.classList.add('active');
+    trackPad(e);
+  });
+  dom.pad.addEventListener('pointermove', (e) => {
+    if (e.pointerId === padPointer) trackPad(e);
+  });
+  const releasePad = (e) => {
+    if (e.pointerId !== padPointer) return;
+    padPointer = null;
+    held &= ~BUTTON.DPAD_ALL;
+    dom.pad.classList.remove('active');
+    dom.padKnob.style.transform = '';
+  };
+  dom.pad.addEventListener('pointerup', releasePad);
+  dom.pad.addEventListener('pointercancel', releasePad);
+
+  for (const el of document.querySelectorAll('[data-button]')) {
     const name = el.dataset.button;
-    const press = (e) => { e.preventDefault(); audio.unlock(); setButton(name, true); };
-    const release = (e) => { e.preventDefault(); setButton(name, false); };
-    el.addEventListener('pointerdown', press);
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      audio.unlock();
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('down');
+      setButton(name, true);
+    });
+    const release = (e) => {
+      e.preventDefault();
+      el.classList.remove('down');
+      setButton(name, false);
+    };
     el.addEventListener('pointerup', release);
     el.addEventListener('pointercancel', release);
-    el.addEventListener('pointerleave', release);
+  }
+
+  // A second tap in quick succession would otherwise zoom the page.
+  for (const el of [dom.pad, dom.stage, ...document.querySelectorAll('[data-button]')]) {
+    el.addEventListener('dblclick', (e) => e.preventDefault());
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 }
+
+dom.fullscreen.addEventListener('click', async () => {
+  audio.unlock();
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      // Landscape is the better shape for this screen, where it is allowed.
+      if (screen.orientation?.lock) {
+        try {
+          await screen.orientation.lock('landscape');
+        } catch {
+          // Most browsers refuse unless installed; the page works either way.
+        }
+      }
+    }
+  } catch {
+    // Fullscreen is not available everywhere, and refusing it is not an error.
+  }
+});
 
 /** Folds any connected gamepad into the same button mask. */
 function gamepadButtons() {
@@ -365,18 +474,73 @@ dom.randomSeed.addEventListener('click', () => {
   startWorld(BigInt(n));
 });
 
+/** Sizes the canvas: whole-number zoom, or filling the space available. */
 function applyScale() {
-  const scale = Number(dom.scale.value);
-  dom.scaleLabel.textContent = `${scale}x`;
-  dom.canvas.style.width = `${dom.canvas.width * scale}px`;
-  dom.canvas.style.height = `${dom.canvas.height * scale}px`;
+  const value = Number(dom.scale.value);
+  if (value === 0) {
+    dom.scaleLabel.textContent = 'Fit';
+    fitCanvas();
+  } else {
+    dom.scaleLabel.textContent = `${value}x`;
+    dom.canvas.style.width = `${dom.canvas.width * value}px`;
+    dom.canvas.style.height = `${dom.canvas.height * value}px`;
+  }
   try {
-    localStorage.setItem('zelduh.scale', String(scale));
+    localStorage.setItem('zelduh.scale', String(value));
   } catch {
     // Private windows can refuse storage; the zoom just will not be remembered.
   }
 }
+
+/** Makes the screen as large as it can be without pushing anything off. */
+function fitCanvas() {
+  // Measure with the canvas out of the way, so its own size does not decide
+  // how much room there is for it.
+  dom.canvas.style.width = '0px';
+  dom.canvas.style.height = '0px';
+
+  // Which way the controls are laid out. This mirrors the same test in the
+  // stylesheet, which is what decides the layout.
+  const sideBySide = matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
+  const pad = dom.padWrap.getBoundingClientRect();
+  const face = dom.faceWrap.getBoundingClientRect();
+
+  // Measure the container rather than the screen's own frame: with the canvas
+  // collapsed the frame has shrunk to nothing and would report no room at all.
+  const gap = parseFloat(getComputedStyle(dom.play).columnGap) || 0;
+  const frame = getComputedStyle(dom.stage);
+  const border =
+    parseFloat(frame.paddingLeft) +
+    parseFloat(frame.paddingRight) +
+    parseFloat(frame.borderLeftWidth) +
+    parseFloat(frame.borderRightWidth);
+  let availableWidth = dom.play.clientWidth - border;
+  if (sideBySide) availableWidth -= pad.width + face.width + gap * 2;
+
+  // The container's top, not the screen frame's: with the canvas collapsed the
+  // frame is centred in its row and reports a position it will not keep.
+  const top = dom.play.getBoundingClientRect().top;
+  const below = sideBySide ? 0 : pad.height + 24;
+  const availableHeight = window.innerHeight - top - below - 16;
+
+  const scale = Math.max(
+    1,
+    Math.min(availableWidth / dom.canvas.width, availableHeight / dom.canvas.height),
+  );
+  dom.canvas.style.width = `${Math.floor(dom.canvas.width * scale)}px`;
+  dom.canvas.style.height = `${Math.floor(dom.canvas.height * scale)}px`;
+}
+
 dom.scale.addEventListener('input', applyScale);
+window.addEventListener('resize', () => requestAnimationFrame(applyScale));
+window.addEventListener('orientationchange', () => {
+  // The new viewport size is not known until after the rotation settles.
+  setTimeout(applyScale, 250);
+});
+document.addEventListener('fullscreenchange', () => requestAnimationFrame(applyScale));
+for (const el of document.querySelectorAll('#panel details')) {
+  el.addEventListener('toggle', () => requestAnimationFrame(applyScale));
+}
 
 function setPaused(value) {
   paused = value;
@@ -430,9 +594,22 @@ function connect() {
     net.socket.close();
     return;
   }
-  const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
   const role = dom.role.value === 'boss' ? '?role=boss' : '';
-  const url = `${scheme}://${location.host}/ws${role}`;
+  const typed = dom.server.value.trim();
+  let url;
+  if (typed) {
+    // Accept a bare host, a ws:// address, or a full path.
+    const base = /^wss?:\/\//.test(typed) ? typed : `ws://${typed}`;
+    url = base.replace(/\/$/, '') + (base.includes('/ws') ? '' : '/ws') + role;
+    try {
+      localStorage.setItem('zelduh.server', typed);
+    } catch {
+      // Not remembering the address is survivable.
+    }
+  } else {
+    const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    url = `${scheme}://${location.host}/ws${role}`;
+  }
   setNetStatus('Connecting\u2026');
   let socket;
   try {
@@ -457,7 +634,12 @@ function connect() {
     net.socket = null;
   };
   socket.onerror = () => {
-    setNetStatus('No server answered. Run zelduh-server and open the page it serves.', 'bad');
+    setNetStatus(
+      typed
+        ? `Nothing answered at ${typed}.`
+        : 'No server here. Run zelduh-server, and put its address in the box above.',
+      'bad',
+    );
   };
   socket.onmessage = (event) => handleMessage(new DataView(event.data));
 }
@@ -668,11 +850,17 @@ async function main() {
   ctx.imageSmoothingEnabled = false;
   try {
     const saved = localStorage.getItem('zelduh.scale');
-    if (saved) dom.scale.value = saved;
+    // Default to filling the screen on a touch device, 3x on a desktop.
+    dom.scale.value = saved ?? (matchMedia('(pointer: coarse)').matches ? '0' : '3');
+    const server = localStorage.getItem('zelduh.server');
+    if (server) dom.server.value = server;
   } catch {
-    // No stored preference is fine.
+    dom.scale.value = matchMedia('(pointer: coarse)').matches ? '0' : '3';
   }
+  setupTouchControls();
   applyScale();
+  // Two frames later the layout has settled, including any late web font.
+  requestAnimationFrame(() => requestAnimationFrame(applyScale));
 
   // A seed in the address bar makes a world shareable: #seed=1234
   const fromHash = new URLSearchParams(location.hash.slice(1)).get('seed');
@@ -680,8 +868,19 @@ async function main() {
 
   startWorld(parseSeed(dom.seed.value));
   dom.overlay.hidden = true;
+  registerServiceWorker();
   window.zelduh = { wasm, startWorld, net, connect, get held() { return held; } };
   requestAnimationFrame(frame);
+}
+
+/** Registers the offline cache, if the browser has one to offer. */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  // A file:// page has no scope to register against.
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+  navigator.serviceWorker.register('sw.js').catch(() => {
+    // Playing without an offline cache is perfectly fine.
+  });
 }
 
 main();
