@@ -28,11 +28,29 @@ pub struct Framebuffer {
 impl Framebuffer {
     /// Creates a framebuffer at the Game Boy's resolution.
     pub fn new() -> Framebuffer {
+        Framebuffer::sized(SCREEN_W, SCREEN_H)
+    }
+
+    /// Creates a framebuffer of any size.
+    ///
+    /// The world is continuous, so a display that is not shaped like a Game
+    /// Boy can be given more of it to look at instead of black bars. The
+    /// lower bound is the Game Boy's own screen, which is what the status bar
+    /// is drawn for; the upper bound is what this software renderer can fill
+    /// sixty times a second without complaint.
+    pub fn sized(width: i32, height: i32) -> Framebuffer {
+        let width = width.clamp(SCREEN_W, 512);
+        let height = height.clamp(SCREEN_H, 512);
         Framebuffer {
-            width: SCREEN_W,
-            height: SCREEN_H,
-            pixels: vec![0xff00_0000; (SCREEN_W * SCREEN_H) as usize],
+            width,
+            height,
+            pixels: vec![0xff00_0000; (width * height) as usize],
         }
+    }
+
+    /// How much of the world this buffer shows, below the status bar.
+    pub fn view(&self) -> (i32, i32) {
+        (self.width, self.height - HUD_H)
     }
 
     pub fn clear(&mut self, color: u32) {
@@ -237,8 +255,8 @@ pub fn render(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: usi
     // Terrain: only the tiles that touch the viewport.
     let first_tx = cam_x.div_euclid(TILE_PX);
     let first_ty = cam_y.div_euclid(TILE_PX);
-    let cols = SCREEN_W / TILE_PX + 2;
-    let rows = (SCREEN_H - HUD_H) / TILE_PX + 2;
+    let cols = fb.width / TILE_PX + 2;
+    let rows = (fb.height - HUD_H) / TILE_PX + 2;
     for ty in first_ty..first_ty + rows {
         for tx in first_tx..first_tx + cols {
             let t = level.map.get(tx, ty);
@@ -269,7 +287,7 @@ pub fn render(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: usi
         let sx = to_px(e.pos.x) - cam_x;
         let sy = to_px(e.pos.y) - cam_y;
         // A generous margin so big sprites do not pop in at the edges.
-        if sx < -40 || sy < -40 || sx > SCREEN_W + 40 || sy > SCREEN_H + 40 {
+        if sx < -40 || sy < -40 || sx > fb.width + 40 || sy > fb.height + 40 {
             continue;
         }
         order.push((to_px(e.pos.y), idx));
@@ -328,7 +346,7 @@ pub fn draw_hud(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: u
     let hud_bg = rgb_to_abgr(pack.palette(pal::HUD).0[3]);
     let text = rgb_to_abgr(pack.palette(pal::HUD).0[1]);
     let dim = rgb_to_abgr(pack.palette(pal::HUD).0[2]);
-    fb.fill_rect(0, 0, SCREEN_W, HUD_H, hud_bg);
+    fb.fill_rect(0, 0, fb.width, HUD_H, hud_bg);
 
     let Some(p) = world.players.get(player) else {
         return;
@@ -373,16 +391,16 @@ pub fn draw_hud(fb: &mut Framebuffer, world: &World, pack: &AssetPack, player: u
     // A message sits across the bottom of the bar.
     if let Some((msg, _)) = p.message {
         let w = font::width(msg);
-        let x = (SCREEN_W - w) / 2;
-        fb.fill_rect(x - 3, SCREEN_H - 14, w + 6, 11, hud_bg);
-        draw_text(fb, msg, x, SCREEN_H - 12, text);
+        let x = (fb.width - w) / 2;
+        fb.fill_rect(x - 3, fb.height - 14, w + 6, 11, hud_bg);
+        draw_text(fb, msg, x, fb.height - 12, text);
     }
 
     // Waiting to respawn.
     if p.respawn > 0 {
         let msg = "YOU DIED";
-        let x = (SCREEN_W - font::width(msg)) / 2;
-        draw_text_shadowed(fb, msg, x, 70, text, hud_bg);
+        let x = (fb.width - font::width(msg)) / 2;
+        draw_text_shadowed(fb, msg, x, fb.height / 2 - 4, text, hud_bg);
     }
 }
 

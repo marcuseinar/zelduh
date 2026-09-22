@@ -7,7 +7,7 @@
 use crate::entity::{eflag, info, Entity, Kind};
 use crate::fixed::px;
 use crate::geom::{Dir, V2};
-use crate::level::Map;
+use crate::level::{LevelKind, Map};
 use crate::physics;
 use crate::tiles::{self, flag};
 use crate::world::World;
@@ -18,6 +18,9 @@ pub(crate) fn update(world: &mut World, idx: usize) {
     let Some(mut e) = world.entities.at(idx).cloned() else {
         return;
     };
+    // The room it is standing in at the start of the frame is the room it is
+    // still standing in at the end of it, in a dungeon.
+    let home = world.level(e.level).room_at(e.pos);
 
     e.iframes = e.iframes.saturating_sub(1);
     e.stun = e.stun.saturating_sub(1);
@@ -29,7 +32,7 @@ pub(crate) fn update(world: &mut World, idx: usize) {
 
     // Monsters far from every player go to sleep rather than wandering off.
     if !world.is_near_player(e.level, e.pos, 1) {
-        write(world, idx, e);
+        write(world, idx, home, e);
         return;
     }
 
@@ -41,11 +44,11 @@ pub(crate) fn update(world: &mut World, idx: usize) {
         if e.knock_frames == 0 {
             e.knock = V2::ZERO;
         }
-        write(world, idx, e);
+        write(world, idx, home, e);
         return;
     }
     if e.stun > 0 {
-        write(world, idx, e);
+        write(world, idx, home, e);
         return;
     }
 
@@ -62,13 +65,33 @@ pub(crate) fn update(world: &mut World, idx: usize) {
         _ => {}
     }
 
-    write(world, idx, e);
+    write(world, idx, home, e);
 }
 
-fn write(world: &mut World, idx: usize, e: Entity) {
+fn write(world: &mut World, idx: usize, home: (i32, i32), mut e: Entity) {
+    confine(world, &mut e, home);
     if let Some(slot) = world.entities.at_mut(idx) {
         *slot = e;
     }
+}
+
+/// Keeps a monster inside one room of a dungeon.
+///
+/// The overworld is one continuous map and monsters are welcome to roam it.
+/// A dungeon is not: it is rooms joined by doorways, and a doorway is for
+/// heroes. Nothing should follow you through one, and nothing should be
+/// waiting just inside a room having wandered in from next door.
+fn confine(world: &World, e: &mut Entity, home: (i32, i32)) {
+    let level = world.level(e.level);
+    // A player driving a boss is a player, and goes where they like.
+    if level.kind != LevelKind::Dungeon || e.has(eflag::POSSESSED) {
+        return;
+    }
+    let b = level.room_bounds(home.0, home.1);
+    let hw = px(e.body_w) / 2;
+    let hh = px(e.body_h) / 2;
+    e.pos.x = e.pos.x.max(b.x + hw).min(b.right() - hw);
+    e.pos.y = e.pos.y.max(b.y + hh).min(b.bottom() - hh);
 }
 
 /// Moves a walker, turning around when it would hit a wall or step into water.
@@ -365,11 +388,57 @@ mod tests {
     }
 
     fn arena_sized(fill: u8, w: i32, h: i32) -> World {
-        let mut lv = Level::new(LevelKind::Overworld, w, h, fill);
+        arena_of(LevelKind::Overworld, fill, w, h)
+    }
+
+    fn arena_of(kind: LevelKind, fill: u8, w: i32, h: i32) -> World {
+        let mut lv = Level::new(kind, w, h, fill);
         lv.entrance = V2::from_px(80, 64);
         let mut w = World::new(31, vec![lv], 1);
         w.join(0);
         w
+    }
+
+    #[test]
+    fn a_dungeon_monster_stays_in_its_room() {
+        use crate::fixed::to_px;
+        use crate::level::{ROOM_PX_H, ROOM_PX_W};
+        let mut w = arena_of(LevelKind::Dungeon, tile::FLOOR, 2, 2);
+        // The hero stands in room (0, 0). The monster next door can see them
+        // and will try to close in, but a doorway is not for monsters.
+        let id = w.spawn(Kind::Moblin, 0, V2::from_px(ROOM_PX_W + 24, 64));
+        for _ in 0..600 {
+            w.step();
+        }
+        let pos = w.entities.get(id).unwrap().pos;
+        assert_eq!(
+            w.levels[0].room_at(pos),
+            (1, 0),
+            "the monster chased the hero out of its own room"
+        );
+        assert!(to_px(pos.x) >= ROOM_PX_W, "it crossed the western doorway");
+        assert!(to_px(pos.y) < ROOM_PX_H, "it crossed the southern doorway");
+    }
+
+    #[test]
+    fn an_overworld_monster_may_roam() {
+        // The overworld is one continuous map, so nothing pens a monster in.
+        let mut w = arena_sized(tile::GRASS, 2, 2);
+        let start = V2::from_px(150, 64);
+        let id = w.spawn(Kind::Octorok, 0, start);
+        let mut left_the_room = false;
+        for _ in 0..900 {
+            w.step();
+            let pos = w.entities.get(id).unwrap().pos;
+            if w.levels[0].room_at(pos) != (0, 0) {
+                left_the_room = true;
+                break;
+            }
+        }
+        assert!(
+            left_the_room,
+            "a monster on the overworld wandered no further than its room"
+        );
     }
 
     #[test]

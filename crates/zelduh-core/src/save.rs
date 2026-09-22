@@ -17,7 +17,7 @@ use crate::world::{Camera, Player, Role, World};
 /// Magic bytes at the head of every snapshot.
 const MAGIC: &[u8; 4] = b"ZDUH";
 /// Snapshot format version. Bump when the layout changes.
-const VERSION: u16 = 1;
+const VERSION: u16 = 2;
 
 /// Appends primitives to a byte buffer, little endian throughout.
 pub struct Writer {
@@ -350,9 +350,6 @@ fn write_player(w: &mut Writer, p: &Player) {
     w.i32(p.room.1);
     w.i32(p.camera.x);
     w.i32(p.camera.y);
-    w.i32(p.camera.target_x);
-    w.i32(p.camera.target_y);
-    w.u16(p.camera.scroll);
     w.u8(p.camera.shake);
     w.u16(p.carrying.idx);
     w.u16(p.carrying.gen);
@@ -388,13 +385,13 @@ fn read_player(r: &mut Reader) -> Option<Player> {
     let role = if r.u8()? == 1 { Role::Boss } else { Role::Hero };
     let level = r.u16()?;
     let room = (r.i32()?, r.i32()?);
+    // How much of the world this player can see belongs to their screen, not
+    // to the world, so it is left at the default for whoever is restoring.
     let camera = Camera {
         x: r.i32()?,
         y: r.i32()?,
-        target_x: r.i32()?,
-        target_y: r.i32()?,
-        scroll: r.u16()?,
         shake: r.u8()?,
+        ..Camera::default()
     };
     let carrying = EntityId {
         idx: r.u16()?,

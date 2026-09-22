@@ -11,19 +11,17 @@ use crate::fixed::{px, to_px, Fx, ONE};
 use crate::geom::{Dir, Rect, V2};
 use crate::input::Input;
 use crate::items::{Inventory, Item};
-use crate::level::{Level, Spawn, HUD_H, ROOM_PX_H, ROOM_PX_W, SCREEN_H, SCREEN_W, TILE_PX};
+use crate::level::{Level, Spawn, HUD_H, SCREEN_H, SCREEN_W, TILE_PX};
 use crate::rng::Rng;
 use crate::tiles::{self, flag, tile};
 
 /// Frames a player is immune after taking a hit.
 pub const PLAYER_IFRAMES: u8 = 48;
-/// Frames the camera takes to scroll between rooms.
-pub const ROOM_SCROLL_FRAMES: u16 = 14;
 /// Frames between dying and respawning.
 pub const RESPAWN_FRAMES: u16 = 90;
-/// Height of the visible playfield, below the status bar.
+/// Height of the Game Boy's playfield, below the status bar.
 pub const VIEW_H: i32 = SCREEN_H - HUD_H;
-/// Width of the visible playfield.
+/// Width of the Game Boy's playfield.
 pub const VIEW_W: i32 = SCREEN_W;
 
 /// What a player is currently doing.
@@ -52,41 +50,52 @@ pub enum Role {
 }
 
 /// A per-player view of the world.
-#[derive(Clone, Copy, Debug, Default)]
+///
+/// The world is one continuous map, so the camera simply keeps the player in
+/// the middle of it rather than jumping a screenful at a time.
+#[derive(Clone, Copy, Debug)]
 pub struct Camera {
     /// Top-left of the viewport in world pixels, fixed point.
     pub x: Fx,
     pub y: Fx,
-    /// Where the camera is heading.
-    pub target_x: Fx,
-    pub target_y: Fx,
-    /// Frames of scroll remaining.
-    pub scroll: u16,
+    /// How much of the world this player can see, in pixels.
+    ///
+    /// The Game Boy showed [`VIEW_W`] by [`VIEW_H`]; a taller or wider display
+    /// is allowed to show more of the map instead of black bars. This is a
+    /// local choice about a screen, never part of the simulation, so two
+    /// players looking at different amounts of the world still agree about
+    /// everything in it.
+    pub view_w: i32,
+    pub view_h: i32,
     /// Frames of screen shake remaining.
     pub shake: u8,
+}
+
+impl Default for Camera {
+    fn default() -> Camera {
+        Camera {
+            x: 0,
+            y: 0,
+            view_w: VIEW_W,
+            view_h: VIEW_H,
+            shake: 0,
+        }
+    }
 }
 
 impl Camera {
     fn snap(&mut self, x: Fx, y: Fx) {
         self.x = x;
         self.y = y;
-        self.target_x = x;
-        self.target_y = y;
-        self.scroll = 0;
     }
 
     fn step(&mut self) {
-        if self.scroll > 0 {
-            let n = self.scroll as Fx;
-            self.x += (self.target_x - self.x) / n;
-            self.y += (self.target_y - self.y) / n;
-            self.scroll -= 1;
-            if self.scroll == 0 {
-                self.x = self.target_x;
-                self.y = self.target_y;
-            }
-        }
         self.shake = self.shake.saturating_sub(1);
+    }
+
+    /// The point in the middle of the viewport.
+    pub fn center(&self) -> V2 {
+        V2::new(self.x + px(self.view_w / 2), self.y + px(self.view_h / 2))
     }
 }
 
@@ -198,6 +207,7 @@ impl World {
             e.data[1] = entrance.y;
         }
         let room = self.levels[0].room_at(entrance);
+        let view = self.players[player].camera;
         let p = &mut self.players[player];
         *p = Player {
             entity: id,
@@ -206,7 +216,8 @@ impl World {
             room,
             ..Player::default()
         };
-        let (cx, cy) = camera_for_room(&self.levels[0], room);
+        p.camera = view;
+        let (cx, cy) = camera_on(&self.levels[0], entrance, view.view_w, view.view_h);
         p.camera.snap(cx, cy);
         true
     }
@@ -588,8 +599,8 @@ impl World {
         }
         // Dying costs half of the player's rupees, the classic sting.
         let room = self.levels[0].room_at(entrance);
-        let (cx, cy) = camera_for_room(&self.levels[0], room);
         let p = &mut self.players[player];
+        let (cx, cy) = camera_on(&self.levels[0], entrance, p.camera.view_w, p.camera.view_h);
         p.level = 0;
         p.room = room;
         p.camera.snap(cx, cy);
@@ -610,7 +621,8 @@ impl World {
             e.data[1] = to_pos.y;
         }
         let room = self.level(to_level).room_at(to_pos);
-        let (cx, cy) = camera_for_room(self.level(to_level), room);
+        let view = self.players[player].camera;
+        let (cx, cy) = camera_on(self.level(to_level), to_pos, view.view_w, view.view_h);
         let p = &mut self.players[player];
         p.level = to_level;
         p.room = room;
@@ -628,6 +640,44 @@ impl World {
             p.message = Some((text, 150));
         }
         self.events.push(Event::Message(text));
+    }
+
+    // ----- the camera -----------------------------------------------------
+
+    /// Points a player's camera at wherever they are now.
+    ///
+    /// Rooms still exist — they decide what gets spawned, and monsters in a
+    /// dungeon stay in theirs — but the view no longer jumps between them.
+    pub(crate) fn follow_player(&mut self, pi: usize, focus: V2) {
+        let level = self.players[pi].level;
+        let (view_w, view_h) = {
+            let cam = &self.players[pi].camera;
+            (cam.view_w, cam.view_h)
+        };
+        let room = self.level(level).room_at(focus);
+        let (cx, cy) = camera_on(self.level(level), focus, view_w, view_h);
+        let p = &mut self.players[pi];
+        p.camera.snap(cx, cy);
+        if room != p.room {
+            p.room = room;
+            self.events.push(Event::RoomChanged {
+                player: pi as u8,
+                rx: room.0,
+                ry: room.1,
+            });
+        }
+    }
+
+    /// Sets how much of the world one player can see.
+    ///
+    /// Purely local: it changes what is drawn for that player and nothing
+    /// else, so clients on different screens stay in step.
+    pub fn set_view(&mut self, player: usize, w: i32, h: i32) {
+        let Some(p) = self.players.get_mut(player) else {
+            return;
+        };
+        p.camera.view_w = w.max(TILE_PX);
+        p.camera.view_h = h.max(TILE_PX);
     }
 
     // ----- room streaming -------------------------------------------------
@@ -866,13 +916,14 @@ impl World {
     }
 }
 
-/// Camera position that frames a room, clamped to the level.
-pub fn camera_for_room(level: &Level, room: (i32, i32)) -> (Fx, Fx) {
-    let max_x = (level.map.w() * TILE_PX - VIEW_W).max(0);
-    let max_y = (level.map.h() * TILE_PX - VIEW_H).max(0);
-    let x = (room.0 * ROOM_PX_W).clamp(0, max_x);
-    let y = (room.1 * ROOM_PX_H).clamp(0, max_y);
-    (px(x), px(y))
+/// Camera position that centres `focus`, clamped so the view never runs off
+/// the edge of the map.
+pub fn camera_on(level: &Level, focus: V2, view_w: i32, view_h: i32) -> (Fx, Fx) {
+    let max_x = px((level.map.w() * TILE_PX - view_w).max(0));
+    let max_y = px((level.map.h() * TILE_PX - view_h).max(0));
+    let x = (focus.x - px(view_w / 2)).clamp(0, max_x);
+    let y = (focus.y - px(view_h / 2)).clamp(0, max_y);
+    (x, y)
 }
 
 /// Converts a world position to screen pixels for a given camera.
@@ -996,12 +1047,56 @@ mod tests {
 
     #[test]
     fn camera_stays_inside_the_level() {
+        use crate::level::{ROOM_PX_H, ROOM_PX_W};
         let lv = Level::new(LevelKind::Overworld, 1, 1, tile::GRASS);
-        let (x, y) = camera_for_room(&lv, (0, 0));
+        // Looking at the top-left corner: the view has nowhere to go but 0,0.
+        let (x, y) = camera_on(&lv, V2::from_px(0, 0), VIEW_W, VIEW_H);
         assert_eq!((x, y), (0, 0));
-        let (x, y) = camera_for_room(&lv, (5, 5));
-        assert_eq!(to_px(x), 0, "a one-room level cannot scroll");
+        // Looking well past the far corner of a level only one room across.
+        let (x, y) = camera_on(&lv, V2::from_px(9999, 9999), VIEW_W, VIEW_H);
+        assert_eq!(
+            to_px(x),
+            ROOM_PX_W - VIEW_W,
+            "a single room is exactly a screen wide"
+        );
         assert_eq!(to_px(y), ROOM_PX_H - VIEW_H);
+    }
+
+    #[test]
+    fn a_taller_view_shows_more_of_the_world() {
+        let lv = Level::new(LevelKind::Overworld, 4, 4, tile::GRASS);
+        let middle = V2::from_px(300, 300);
+        let (_, narrow) = camera_on(&lv, middle, VIEW_W, VIEW_H);
+        let (_, tall) = camera_on(&lv, middle, VIEW_W, VIEW_H * 2);
+        // Same centre, so a viewport twice as tall starts half a screen higher.
+        assert_eq!(to_px(narrow - tall), VIEW_H / 2);
+    }
+
+    #[test]
+    fn the_size_of_a_screen_does_not_change_the_world() {
+        // Two players, one on a Game Boy-shaped screen and one on a tall
+        // phone, fed the same buttons. What they can see differs; what
+        // happens must not.
+        let mut small = test_world();
+        let mut large = test_world();
+        large.set_view(0, VIEW_W, VIEW_H * 2);
+        for i in 0..240u16 {
+            let buttons = match i % 4 {
+                0 => crate::input::button::RIGHT,
+                1 => crate::input::button::DOWN,
+                2 => crate::input::button::A,
+                _ => crate::input::button::LEFT,
+            };
+            small.set_input(0, buttons);
+            large.set_input(0, buttons);
+            small.step();
+            large.step();
+        }
+        assert_ne!(
+            small.players[0].camera.y, large.players[0].camera.y,
+            "the taller screen really is looking at a different slice"
+        );
+        assert_eq!(small.checksum(), large.checksum());
     }
 
     #[test]

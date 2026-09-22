@@ -12,7 +12,7 @@ use crate::fixed::px;
 use crate::geom::{Dir, V2};
 use crate::input::button;
 use crate::level::Spawn;
-use crate::world::{camera_for_room, Role, World, ROOM_SCROLL_FRAMES};
+use crate::world::{Role, World};
 
 /// Frames between a boss player's slams.
 const SLAM_COOLDOWN: u16 = 36;
@@ -62,7 +62,8 @@ impl World {
         };
 
         let room = self.level(level).room_at(pos);
-        let (cx, cy) = camera_for_room(self.level(level), room);
+        let view = self.players[player].camera;
+        let (cx, cy) = crate::world::camera_on(self.level(level), pos, view.view_w, view.view_h);
         let p = &mut self.players[player];
         p.entity = boss;
         p.role = Role::Boss;
@@ -73,9 +74,6 @@ impl World {
         p.carrying = EntityId::NONE;
         p.camera.x = cx;
         p.camera.y = cy;
-        p.camera.target_x = cx;
-        p.camera.target_y = cy;
-        p.camera.scroll = 0;
         self.say(player, "YOU ARE THE BOSS");
         true
     }
@@ -193,17 +191,9 @@ pub(crate) fn update(world: &mut World, pi: usize) {
 
     let level_ref = &world.levels[level as usize];
     e.pos = level_ref.clamp(e.pos, px(e.body_w) / 2, px(e.body_h) / 2);
-    let room = level_ref.room_at(e.pos);
+    let pos = e.pos;
     write_back(world, eid, e);
-
-    if room != world.players[pi].room {
-        let (cx, cy) = camera_for_room(&world.levels[level as usize], room);
-        let p = &mut world.players[pi];
-        p.room = room;
-        p.camera.target_x = cx;
-        p.camera.target_y = cy;
-        p.camera.scroll = ROOM_SCROLL_FRAMES;
-    }
+    world.follow_player(pi, pos);
 }
 
 fn write_back(world: &mut World, eid: EntityId, e: Entity) {

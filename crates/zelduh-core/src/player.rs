@@ -1,7 +1,7 @@
 //! The player state machine: walking, swinging, lifting, falling, drowning.
 
 use crate::entity::{eflag, Entity, EntityId, Kind};
-use crate::event::{Event, Sfx};
+use crate::event::Sfx;
 use crate::fixed::{px, to_px, Fx, ONE};
 use crate::geom::{Dir, V2};
 use crate::input::button;
@@ -9,7 +9,7 @@ use crate::items::Item;
 use crate::level::{tile_center, TILE_PX};
 use crate::physics;
 use crate::tiles::{self, flag, tile};
-use crate::world::{camera_for_room, pstate, World, ROOM_SCROLL_FRAMES};
+use crate::world::{pstate, World};
 
 /// Walking speed in fixed-point pixels per frame.
 const WALK: Fx = 320;
@@ -246,22 +246,9 @@ pub(crate) fn update(world: &mut World, pi: usize) {
 
     let level_ref = &world.levels[level as usize];
     e.pos = level_ref.clamp(e.pos, px(e.body_w) / 2, px(e.body_h) / 2);
-    let room = level_ref.room_at(e.pos);
+    let pos = e.pos;
     write_back(world, eid, e);
-
-    if room != world.players[pi].room {
-        let (cx, cy) = camera_for_room(&world.levels[level as usize], room);
-        let p = &mut world.players[pi];
-        p.room = room;
-        p.camera.target_x = cx;
-        p.camera.target_y = cy;
-        p.camera.scroll = ROOM_SCROLL_FRAMES;
-        world.events.push(Event::RoomChanged {
-            player: pi as u8,
-            rx: room.0,
-            ry: room.1,
-        });
-    }
+    world.follow_player(pi, pos);
 }
 
 fn write_back(world: &mut World, eid: EntityId, e: Entity) {
@@ -585,10 +572,7 @@ impl crate::world::Player {
     /// Centre of this player's viewport in world pixels, used as a fallback
     /// source position for damage that has no obvious origin.
     pub fn camera_center(&self) -> V2 {
-        V2::new(
-            self.camera.x + px(crate::world::VIEW_W / 2),
-            self.camera.y + px(crate::world::VIEW_H / 2),
-        )
+        self.camera.center()
     }
 }
 
@@ -789,18 +773,33 @@ mod tests {
     }
 
     #[test]
-    fn crossing_a_room_boundary_scrolls_the_camera() {
+    fn the_camera_follows_rather_than_jumping_a_screen() {
         let mut w = world_with(tile::GRASS);
         assert_eq!(w.players[0].room, (0, 0));
+        let mut previous = w.players[0].camera.x;
+        let mut biggest_step = 0;
         for _ in 0..200 {
             w.set_input(0, button::RIGHT);
             w.step();
+            let now = w.players[0].camera.x;
+            biggest_step = biggest_step.max((now - previous).abs());
+            previous = now;
             if w.players[0].room == (1, 0) {
                 break;
             }
         }
-        assert_eq!(w.players[0].room, (1, 0));
-        assert!(w.players[0].camera.target_x > 0);
+        assert_eq!(
+            w.players[0].room,
+            (1, 0),
+            "the hero walked into the next room"
+        );
+        assert!(w.players[0].camera.x > 0, "and the view came with them");
+        // A walk is about a pixel and a half a frame. Anything much more than
+        // that would be the old screen-at-a-time jump.
+        assert!(
+            crate::fixed::to_px(biggest_step) <= 2,
+            "the view crept along with the hero, moving at most {biggest_step} in a frame"
+        );
     }
 
     #[test]

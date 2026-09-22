@@ -2,8 +2,13 @@
 //!
 //! The screen layout follows the Game Boy: a 160x144 screen with a 16 pixel
 //! status bar, leaving a 160x128 playfield that holds exactly 10x8 tiles of
-//! 16x16 pixels. One "room" is one screenful, and the camera snaps between
-//! rooms the way Link's Awakening does rather than scrolling freely.
+//! 16x16 pixels.
+//!
+//! A level's map is one continuous grid of tiles and the camera scrolls
+//! across it freely, so there is no seam to walk through. A "room" is a
+//! 10x8 window onto that grid, and it is still what generation lays out and
+//! what decides where monsters live: a monster in a dungeon belongs to one
+//! room and stays in it, rather than following a hero through a doorway.
 
 use crate::fixed::{px, to_px, Fx};
 use crate::geom::{Dir, Rect, V2};

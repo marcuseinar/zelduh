@@ -44,6 +44,7 @@ const dom = {
   randomSeed: document.getElementById('random-seed'),
   scale: document.getElementById('scale'),
   scaleLabel: document.getElementById('scale-label'),
+  fill: document.getElementById('fill'),
   sound: document.getElementById('sound'),
   drop: document.getElementById('drop'),
   file: document.getElementById('file'),
@@ -120,6 +121,7 @@ async function loadWasm() {
   return {
     memory: e.memory,
     zelduh_alloc: e.zelduh_alloc,
+    zelduh_set_screen: e.zelduh_set_screen,
     zelduh_free: e.zelduh_free,
     zelduh_new_game: e.zelduh_new_game,
     zelduh_join: e.zelduh_join,
@@ -351,7 +353,7 @@ function setupTouchControls() {
 function showPanel(open) {
   dom.panel.classList.toggle('open', open);
   dom.scrim.hidden = !open;
-  requestAnimationFrame(applyScale);
+  requestAnimationFrame(applyScreen);
 }
 
 dom.menu.addEventListener('click', () => {
@@ -514,10 +516,11 @@ function applyScale() {
   }
 }
 
-/** Makes the screen as large as it can be without pushing anything off. */
-function fitCanvas() {
+/** How much room there is for the screen, in CSS pixels. */
+function availableBox() {
   // Measure with the canvas out of the way, so its own size does not decide
   // how much room there is for it.
+  const was = [dom.canvas.style.width, dom.canvas.style.height];
   dom.canvas.style.width = '0px';
   dom.canvas.style.height = '0px';
 
@@ -528,38 +531,98 @@ function fitCanvas() {
     parseFloat(frame[`padding${a}`]) + parseFloat(frame[`padding${b}`]) +
     parseFloat(frame[`border${a}Width`]) + parseFloat(frame[`border${b}Width`]);
 
-  let availableWidth;
-  let availableHeight;
+  const width = dom.play.clientWidth - sides('Left', 'Right');
+  let height;
   if (TOUCH) {
     // The controls float over the picture, so the screen gets the whole page.
-    availableWidth = dom.play.clientWidth - sides('Left', 'Right');
-    availableHeight = dom.play.clientHeight - sides('Top', 'Bottom');
+    height = dom.play.clientHeight - sides('Top', 'Bottom');
   } else {
-    availableWidth = dom.play.clientWidth - sides('Left', 'Right');
     // The container's top, not the screen frame's: with the canvas collapsed
     // the frame is centred in its row and reports a position it will not keep.
     const top = dom.play.getBoundingClientRect().top;
-    availableHeight = window.innerHeight - top - sides('Top', 'Bottom') - 16;
+    height = window.innerHeight - top - sides('Top', 'Bottom') - 16;
   }
+  [dom.canvas.style.width, dom.canvas.style.height] = was;
+  return { width: Math.max(width, 1), height: Math.max(height, 1) };
+}
 
+/** Makes the screen as large as it can be without pushing anything off. */
+function fitCanvas() {
+  const box = availableBox();
   const scale = Math.max(
     1,
-    Math.min(availableWidth / dom.canvas.width, availableHeight / dom.canvas.height),
+    Math.min(box.width / dom.canvas.width, box.height / dom.canvas.height),
   );
   dom.canvas.style.width = `${Math.floor(dom.canvas.width * scale)}px`;
   dom.canvas.style.height = `${Math.floor(dom.canvas.height * scale)}px`;
 }
 
+// The Game Boy's own screen, which is the smallest the engine will draw.
+const BASE_W = 160;
+const BASE_H = 144;
+// How much world the software renderer will fill sixty times a second. The
+// Game Boy's screen is 23,040 pixels; a few times that is still comfortable,
+// and past it a very long, thin display gets black bars back rather than a
+// slideshow.
+const MAX_VIEW_PIXELS = 130000;
+
+/**
+ * Picks how much of the world to draw.
+ *
+ * The world is continuous now, so a display that is not shaped like a Game
+ * Boy can be shown more of it rather than bars down the sides. The scale is
+ * the largest that still covers the whole box, which leaves one dimension at
+ * the Game Boy's own size and stretches the other.
+ */
+function chooseScreen() {
+  if (!dom.fill.checked) return [BASE_W, BASE_H];
+  const box = availableBox();
+  let scale = Math.min(box.width / BASE_W, box.height / BASE_H);
+  if (!(scale > 0) || !Number.isFinite(scale)) return [BASE_W, BASE_H];
+  let w = Math.round(box.width / scale);
+  let h = Math.round(box.height / scale);
+  if (w * h > MAX_VIEW_PIXELS) {
+    const shrink = Math.sqrt((w * h) / MAX_VIEW_PIXELS);
+    w = Math.max(BASE_W, Math.round(w / shrink));
+    h = Math.max(BASE_H, Math.round(h / shrink));
+  }
+  return [w, h];
+}
+
+/** Resizes the screen to suit the display, then fits it to the page. */
+function applyScreen() {
+  // A resize can arrive before the module has finished loading.
+  if (!wasm) return;
+  const [w, h] = chooseScreen();
+  if (wasm.zelduh_set_screen(w, h)) {
+    dom.canvas.width = wasm.zelduh_screen_width();
+    dom.canvas.height = wasm.zelduh_screen_height();
+    ctx.imageSmoothingEnabled = false;
+    // The old buffer is the wrong shape now.
+    imageData = null;
+  }
+  applyScale();
+}
+
+dom.fill.addEventListener('change', () => {
+  try {
+    localStorage.setItem('zelduh.fill', dom.fill.checked ? '1' : '0');
+  } catch {
+    // Not remembering the preference is survivable.
+  }
+  applyScreen();
+});
+
 dom.scale.addEventListener('input', applyScale);
-window.addEventListener('resize', () => requestAnimationFrame(applyScale));
-visualViewport?.addEventListener('resize', () => requestAnimationFrame(applyScale));
+window.addEventListener('resize', () => requestAnimationFrame(applyScreen));
+visualViewport?.addEventListener('resize', () => requestAnimationFrame(applyScreen));
 window.addEventListener('orientationchange', () => {
   // The new viewport size is not known until after the rotation settles.
-  setTimeout(applyScale, 250);
+  setTimeout(applyScreen, 250);
 });
-document.addEventListener('fullscreenchange', () => requestAnimationFrame(applyScale));
+document.addEventListener('fullscreenchange', () => requestAnimationFrame(applyScreen));
 for (const el of document.querySelectorAll('#panel details')) {
-  el.addEventListener('toggle', () => requestAnimationFrame(applyScale));
+  el.addEventListener('toggle', () => requestAnimationFrame(applyScreen));
 }
 
 function setPaused(value) {
@@ -868,19 +931,25 @@ async function main() {
   dom.canvas.width = wasm.zelduh_screen_width();
   dom.canvas.height = wasm.zelduh_screen_height();
   ctx.imageSmoothingEnabled = false;
+  // A phone has the wrong shape for a Game Boy, so by default it gets more
+  // of the world instead of black bars. A desktop keeps the original screen
+  // unless it is asked for more.
+  dom.fill.checked = TOUCH;
   try {
     const saved = localStorage.getItem('zelduh.scale');
     // Default to filling the screen on a touch device, 3x on a desktop.
     dom.scale.value = saved ?? (TOUCH ? '0' : '3');
+    const fill = localStorage.getItem('zelduh.fill');
+    if (fill !== null) dom.fill.checked = fill === '1';
     const server = localStorage.getItem('zelduh.server');
     if (server) dom.server.value = server;
   } catch {
     dom.scale.value = TOUCH ? '0' : '3';
   }
   if (TOUCH) setupTouchControls();
-  applyScale();
+  applyScreen();
   // Two frames later the layout has settled, including any late web font.
-  requestAnimationFrame(() => requestAnimationFrame(applyScale));
+  requestAnimationFrame(() => requestAnimationFrame(applyScreen));
 
   // A seed in the address bar makes a world shareable: #seed=1234
   const fromHash = new URLSearchParams(location.hash.slice(1)).get('seed');

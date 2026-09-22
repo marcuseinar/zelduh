@@ -18,7 +18,7 @@
 //! That split is what will make multiplayer work: the browser is a terminal
 //! for a simulation that only ever advances through [`step`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use zelduh_assets::pack::AssetPack;
 use zelduh_assets::{builtin, FileKind};
@@ -42,6 +42,32 @@ struct Game {
 
 thread_local! {
     static GAME: RefCell<Option<Game>> = const { RefCell::new(None) };
+    /// How big a screen this page is drawing to.
+    ///
+    /// The world is continuous, so a tall phone can be shown more of it
+    /// rather than black bars. Nobody else needs to agree: what a player can
+    /// see is not part of the simulation, so two players on differently
+    /// shaped screens stay perfectly in step.
+    static SCREEN: Cell<(i32, i32)> = const {
+        Cell::new((
+            zelduh_core::level::SCREEN_W,
+            zelduh_core::level::SCREEN_H,
+        ))
+    };
+}
+
+/// Builds a framebuffer at the size the page last asked for.
+fn fresh_framebuffer() -> Framebuffer {
+    let (w, h) = SCREEN.with(|s| s.get());
+    Framebuffer::sized(w, h)
+}
+
+/// Tells the world how much of itself each player can see here.
+fn apply_screen(game: &mut Game) {
+    let (w, h) = game.fb.view();
+    for i in 0..game.world.players.len() {
+        game.world.set_view(i, w, h);
+    }
 }
 
 /// Runs `f` with the game, or returns `default` when there is no game yet.
@@ -98,11 +124,14 @@ pub extern "C" fn new_game(seed_lo: u32, seed_hi: u32, players: u32) -> u32 {
         *slot = Some(Game {
             world,
             pack,
-            fb: Framebuffer::new(),
+            fb: fresh_framebuffer(),
             events: Vec::new(),
             report: String::new(),
             incoming: Vec::new(),
         });
+        if let Some(game) = slot.as_mut() {
+            apply_screen(game);
+        }
     });
     1
 }
@@ -206,13 +235,33 @@ pub extern "C" fn framebuffer_len() -> usize {
 /// Screen width in pixels.
 #[export_name = "zelduh_screen_width"]
 pub extern "C" fn screen_width() -> u32 {
-    zelduh_core::level::SCREEN_W as u32
+    SCREEN.with(|s| s.get().0) as u32
 }
 
 /// Screen height in pixels.
 #[export_name = "zelduh_screen_height"]
 pub extern "C" fn screen_height() -> u32 {
-    zelduh_core::level::SCREEN_H as u32
+    SCREEN.with(|s| s.get().1) as u32
+}
+
+/// Resizes the screen, so that a display which is not shaped like a Game Boy
+/// can be given more of the world instead of black bars.
+///
+/// The size is clamped to something the software renderer can keep up with.
+/// Returns 1 when the size changed.
+#[export_name = "zelduh_set_screen"]
+pub extern "C" fn set_screen(width: u32, height: u32) -> u32 {
+    let want = Framebuffer::sized(width as i32, height as i32);
+    let size = (want.width, want.height);
+    if SCREEN.with(|s| s.get()) == size {
+        return 0;
+    }
+    SCREEN.with(|s| s.set(size));
+    with_game((), |g| {
+        g.fb = want;
+        apply_screen(g);
+    });
+    1
 }
 
 // ----- events and status -------------------------------------------------
@@ -403,12 +452,16 @@ pub unsafe extern "C" fn restore(ptr: *const u8, len: usize) -> u32 {
                 *slot = Some(Game {
                     world,
                     pack: builtin::pack(),
-                    fb: Framebuffer::new(),
+                    fb: fresh_framebuffer(),
                     events: Vec::new(),
                     report: String::new(),
                     incoming: Vec::new(),
                 })
             }
+        }
+        // A snapshot carries the world, not the screen it will be shown on.
+        if let Some(game) = slot.as_mut() {
+            apply_screen(game);
         }
     });
     1
@@ -490,6 +543,35 @@ mod tests {
             (screen_width() * screen_height() * 4) as usize
         );
         assert!(player_health(0) > 0);
+    }
+
+    #[test]
+    fn a_taller_screen_means_a_bigger_buffer() {
+        new_game(1234, 0, 1);
+        join(0);
+        assert_eq!(set_screen(160, 320), 1);
+        assert_eq!(screen_height(), 320);
+        assert_eq!(framebuffer_len(), 160 * 320 * 4);
+        assert_eq!(set_screen(160, 320), 0, "asking for the same size twice");
+        render(0);
+
+        // The size belongs to the page, not to the world, so it survives a
+        // new world and a restored one alike.
+        new_game(9, 0, 1);
+        join(0);
+        assert_eq!(framebuffer_len(), 160 * 320 * 4);
+        step();
+        let len = save();
+        let data = unsafe { std::slice::from_raw_parts(snapshot(), len) }.to_vec();
+        assert_eq!(unsafe { restore(data.as_ptr(), data.len()) }, 1);
+        assert_eq!(framebuffer_len(), 160 * 320 * 4);
+
+        // Anything silly is clamped to what the renderer can keep up with.
+        set_screen(4, 99_999);
+        assert_eq!(screen_width(), 160);
+        assert_eq!(screen_height(), 512);
+        render(0);
+        set_screen(160, 144);
     }
 
     #[test]

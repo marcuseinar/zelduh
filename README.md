@@ -28,16 +28,27 @@ For single player, any static server will do:
 ## What it is
 
 The screen is the Game Boy's: 160x144 pixels, with a 16-pixel status bar over a
-160x128 playfield that holds exactly ten by eight tiles of sixteen pixels. The
-camera snaps between rooms rather than scrolling freely. Everything is drawn by
-hand into a framebuffer rather than on the GPU, so the pixel grid stays exact.
+160x128 playfield that holds exactly ten by eight tiles of sixteen pixels.
+Everything is drawn by hand into a framebuffer rather than on the GPU, so the
+pixel grid stays exact.
+
+The world is continuous. The camera follows you across one unbroken map
+instead of jumping a screenful at a time, which means a phone can be shown
+more of the world rather than black bars: **Fill the screen** picks a
+viewport the shape of your display, keeping the pixels the same size. What
+you can see is a local choice and never reaches the simulation, so two
+players on differently shaped screens stay exactly in step.
+
+Rooms still exist. They are what generation lays out, and inside a dungeon a
+monster belongs to one room and stays in it — a doorway is for heroes.
 
 Every world is generated from a seed, so a number is a shareable place. Put one
 in the address bar (`#seed=1234`) or type it into the page.
 
-- **On a phone**, the pad on the left is a thumb stick: it reads diagonals, and
-  you can slide between directions without lifting off. **FULL** goes
-  fullscreen; **SWAP** exchanges your A and B items.
+- **On a phone**, put a thumb down anywhere on the left of the screen and the
+  stick appears under it: no pad to find, diagonals included, and you can
+  slide between directions without lifting off. **FULL** goes fullscreen,
+  **SWAP** exchanges your A and B items, and **MENU** opens the settings.
 - **Move** with the arrow keys or WASD
 - **A** (sword, or whatever is in the A slot) with Z, J or Space
 - **B** (second item) with X or K
