@@ -5,6 +5,7 @@
 // module's memory, so there is no bindings generator in the build.
 
 import { createNet, randomRoom, selfId, STRATEGIES } from './net.js';
+import { createSound } from './sound.js';
 
 const BUTTON = {
   up: 1 << 0,
@@ -48,6 +49,7 @@ const dom = {
   scaleLabel: document.getElementById('scale-label'),
   fill: document.getElementById('fill'),
   sound: document.getElementById('sound'),
+  music: document.getElementById('music'),
   drop: document.getElementById('drop'),
   file: document.getElementById('file'),
   assetStatus: document.getElementById('asset-status'),
@@ -84,7 +86,10 @@ let wasm = null;
 let held = 0;
 let paused = false;
 let imageData = null;
-const audio = createAudio();
+const audio = createSound({
+  wantsEffects: () => dom.sound.checked,
+  wantsMusic: () => dom.music.checked,
+});
 
 // ---------------------------------------------------------------- wasm glue
 
@@ -171,65 +176,15 @@ async function loadWasm() {
 // ------------------------------------------------------------------- audio
 
 /** A small square-wave synth, in the spirit of the hardware being imitated. */
-function createAudio() {
-  let context = null;
-  // Sfx ids come from the Rust `Sfx` enum, in order.
-  const VOICES = [
-    { f: 620, to: 300, ms: 70, type: 'square', gain: 0.16 },   // 0 sword swing
-    { f: 900, to: 1400, ms: 120, type: 'square', gain: 0.12 }, // 1 sword beam
-    { f: 200, to: 90, ms: 90, type: 'square', gain: 0.2 },     // 2 enemy hit
-    { f: 320, to: 60, ms: 220, type: 'sawtooth', gain: 0.2 },  // 3 enemy dies
-    { f: 180, to: 120, ms: 200, type: 'square', gain: 0.24 },  // 4 hurt
-    { f: 300, to: 40, ms: 700, type: 'sawtooth', gain: 0.26 }, // 5 death
-    { f: 800, to: 1200, ms: 90, type: 'square', gain: 0.14 },  // 6 pickup
-    { f: 1000, to: 1500, ms: 80, type: 'square', gain: 0.12 }, // 7 rupee
-    { f: 700, to: 1100, ms: 130, type: 'triangle', gain: 0.16 }, // 8 heart
-    { f: 260, to: 260, ms: 60, type: 'square', gain: 0.12 },   // 9 bomb placed
-    { f: 140, to: 40, ms: 400, type: 'sawtooth', gain: 0.3 },  // 10 explosion
-    { f: 520, to: 900, ms: 80, type: 'square', gain: 0.12 },   // 11 shoot
-    { f: 400, to: 800, ms: 200, type: 'triangle', gain: 0.1 }, // 12 boomerang
-    { f: 300, to: 500, ms: 160, type: 'square', gain: 0.12 },  // 13 door
-    { f: 700, to: 1000, ms: 200, type: 'square', gain: 0.14 }, // 14 unlock
-    { f: 500, to: 900, ms: 180, type: 'triangle', gain: 0.14 },// 15 chest
-    { f: 900, to: 1600, ms: 320, type: 'triangle', gain: 0.16 },// 16 secret
-    { f: 400, to: 700, ms: 90, type: 'square', gain: 0.1 },    // 17 jump
-    { f: 250, to: 500, ms: 160, type: 'sine', gain: 0.12 },    // 18 splash
-    { f: 600, to: 100, ms: 420, type: 'sine', gain: 0.16 },    // 19 fall
-    { f: 380, to: 520, ms: 80, type: 'square', gain: 0.1 },    // 20 lift
-    { f: 520, to: 300, ms: 90, type: 'square', gain: 0.12 },   // 21 throw
-    { f: 900, to: 700, ms: 60, type: 'square', gain: 0.14 },   // 22 shield
-    { f: 640, to: 640, ms: 40, type: 'square', gain: 0.08 },   // 23 text
-    { f: 260, to: 160, ms: 140, type: 'sawtooth', gain: 0.22 },// 24 boss hurt
-    { f: 220, to: 30, ms: 900, type: 'sawtooth', gain: 0.3 },  // 25 boss dies
-    { f: 500, to: 900, ms: 260, type: 'triangle', gain: 0.14 },// 26 stairs
-    { f: 160, to: 120, ms: 110, type: 'square', gain: 0.12 },  // 27 error
-  ];
+dom.music.addEventListener('change', () => audio.refresh());
+dom.sound.addEventListener('change', () => audio.unlock());
 
-  return {
-    /** Browsers only allow audio to start from a gesture. */
-    unlock() {
-      if (!context) {
-        const Ctor = window.AudioContext || window.webkitAudioContext;
-        if (Ctor) context = new Ctor();
-      }
-      if (context && context.state === 'suspended') context.resume();
-    },
-    play(id) {
-      if (!context || !dom.sound.checked) return;
-      const v = VOICES[id] || VOICES[0];
-      const now = context.currentTime;
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      osc.type = v.type;
-      osc.frequency.setValueAtTime(v.f, now);
-      osc.frequency.exponentialRampToValueAtTime(Math.max(20, v.to), now + v.ms / 1000);
-      gain.gain.setValueAtTime(v.gain, now);
-      gain.gain.exponentialRampToValueAtTime(0.0001, now + v.ms / 1000);
-      osc.connect(gain).connect(context.destination);
-      osc.start(now);
-      osc.stop(now + v.ms / 1000 + 0.02);
-    },
-  };
+/** Which tune belongs with what is happening. */
+function trackForNow() {
+  const me = online() && net.slot >= 0 ? net.slot : 0;
+  if (!wasm.zelduh_player_active(me)) return 'overworld';
+  if (wasm.zelduh_player_role(me) === 1) return 'boss';
+  return wasm.zelduh_player_level(me) === 0 ? 'overworld' : 'dungeon';
 }
 
 // ------------------------------------------------------------------- input
@@ -821,6 +776,8 @@ function draw() {
 
 function updateStats() {
   if (net) refreshNetUi();
+  const want = trackForNow();
+  if (audio.playing !== want) audio.setTrack(want);
   const me = online() && net.slot >= 0 ? net.slot : 0;
   const hp = wasm.zelduh_player_health(me);
   dom.stats.textContent =
@@ -891,7 +848,7 @@ async function main() {
   startWorld(parseSeed(dom.seed.value));
   dom.overlay.hidden = true;
   registerServiceWorker();
-  window.zelduh = { wasm, startWorld, net, selfId, get held() { return held; } };
+  window.zelduh = { wasm, startWorld, net, audio, selfId, get held() { return held; } };
   requestAnimationFrame(frame);
 
   // Arriving on a shared link should just start playing together.
