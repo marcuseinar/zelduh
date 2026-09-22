@@ -145,6 +145,10 @@ pub struct AssetPack {
     pub source: Source,
     pub tiles: Vec<Tile8>,
     pub palettes: Vec<Palette>,
+    /// Which palette each tile was fitted to when it came from an image,
+    /// parallel to `tiles`. Empty for art that was written rather than
+    /// imported, which chooses its palettes by name instead.
+    pub tile_palettes: Vec<u8>,
     /// One entry per logical terrain tile id.
     pub metatiles: Vec<MetaTile>,
     /// True for terrain that is an object standing on the ground rather than
@@ -163,6 +167,7 @@ impl AssetPack {
             source: Source::BuiltIn,
             tiles: vec![BLANK],
             palettes: DEFAULT_PALETTES.to_vec(),
+            tile_palettes: Vec::new(),
             metatiles: vec![[Cell::BLANK; 4]; tile::COUNT],
             overlay: vec![false; tile::COUNT],
             sprites: vec![Sprite::default(); SpriteId::N],
@@ -211,7 +216,30 @@ impl AssetPack {
             self.tiles.resize(base + tiles.len(), BLANK);
         }
         self.tiles[base..base + tiles.len()].copy_from_slice(tiles);
+        // Tiles that arrive without a fitted palette no longer have one.
+        if !self.tile_palettes.is_empty() {
+            self.tile_palettes.resize(self.tiles.len(), 0);
+            self.tile_palettes[base..base + tiles.len()].fill(0);
+        }
         tiles.len()
+    }
+
+    /// Imports tiles along with the palette each one was fitted to.
+    ///
+    /// A profile that binds these can leave the palette off and get the one
+    /// the quantiser chose, which is the only way art from a full-colour
+    /// image keeps its greens green and its browns brown.
+    pub fn import_fitted(&mut self, base: usize, tiles: &[Tile8], palettes: &[u8]) -> usize {
+        let n = self.import_tiles(base, tiles);
+        self.tile_palettes.resize(self.tiles.len(), 0);
+        let end = (base + palettes.len()).min(self.tile_palettes.len());
+        self.tile_palettes[base..end].copy_from_slice(&palettes[..end - base]);
+        n
+    }
+
+    /// The palette a tile was fitted to, if it came from an image.
+    pub fn fitted_palette(&self, tile: u16) -> Option<u8> {
+        self.tile_palettes.get(tile as usize).copied()
     }
 
     /// Replaces the palette table, keeping any palettes the new set omits.

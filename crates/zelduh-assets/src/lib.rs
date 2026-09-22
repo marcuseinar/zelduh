@@ -76,6 +76,32 @@ pub struct LoadReport {
 ///
 /// The pack keeps its structure, so whatever comes in is immediately visible
 /// as terrain and sprites.
+/// Quantises an image into the pack, palettes and all.
+///
+/// An image arrives in full colour and the engine draws four colours a cell,
+/// so something has to give. Fitting each cell to one of sixteen palettes
+/// built from the picture's own colours gives up the least: a hillside keeps
+/// its greens while the path over it keeps its browns.
+fn import_image(pack: &mut AssetPack, img: &image::Image, name: &str) -> usize {
+    let fitted = image::fit_image(
+        img,
+        image::FitOptions {
+            slots: crate::palette::pal::COUNT,
+            // A sheet with transparency in it is a sheet of sprites, and a
+            // sprite's first colour is not a colour. Guessing from the file
+            // saves asking, and a picture with no transparent pixel has
+            // nothing to lose by the guess either way.
+            transparent: image::has_transparency(img),
+        },
+    );
+    let n = pack.import_fitted(0, &fitted.tiles, &fitted.palettes);
+    pack.import_palettes(0, &fitted.table);
+    pack.source = Source::File {
+        name: name.to_string(),
+    };
+    n
+}
+
 pub fn load(pack: &mut AssetPack, name: &str, data: &[u8], kind: FileKind) -> LoadReport {
     let mut warnings = Vec::new();
     match kind {
@@ -129,12 +155,7 @@ pub fn load(pack: &mut AssetPack, name: &str, data: &[u8], kind: FileKind) -> Lo
         }
         FileKind::Bmp => match image::decode_bmp(data) {
             Some(img) => {
-                let (tiles, palette) = image::tiles_from_image(&img);
-                let n = pack.import_tiles(0, &tiles);
-                pack.import_palettes(0, &[palette]);
-                pack.source = Source::File {
-                    name: name.to_string(),
-                };
+                let n = import_image(pack, &img, name);
                 LoadReport {
                     kind: "bmp",
                     detail: format!("{}x{} image, {n} tiles", img.width, img.height),
@@ -155,12 +176,7 @@ pub fn load(pack: &mut AssetPack, name: &str, data: &[u8], kind: FileKind) -> Lo
                 height,
                 rgba: data.to_vec(),
             };
-            let (tiles, palette) = image::tiles_from_image(&img);
-            let n = pack.import_tiles(0, &tiles);
-            pack.import_palettes(0, &[palette]);
-            pack.source = Source::File {
-                name: name.to_string(),
-            };
+            let n = import_image(pack, &img, name);
             LoadReport {
                 kind: "image",
                 detail: format!("{width}x{height} image, {n} tiles"),

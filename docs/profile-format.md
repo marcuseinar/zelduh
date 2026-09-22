@@ -54,6 +54,12 @@ terrain BUSH 240 241 248 249 pal=GRASS
 A cell is a tile index, optionally with flips (`241:x`, `241:y`, `241:xy`), or
 `-` for nothing.
 
+`pal=` may be left off. Then each cell keeps the palette its tile was fitted
+to when the image was imported, which is what you want for art that came from
+a picture: the quantiser has already worked out that this cell is grass and
+that one is a path. Name a palette when the art came from a ROM, where the
+tiles are two bits per pixel and carry no colour of their own.
+
 ### `sprite <name> <cols> <rows> <cells...> [pal=NAME]`
 
 Binds a sprite to `cols * rows` cells in reading order. Sprite names are the

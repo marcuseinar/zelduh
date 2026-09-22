@@ -175,15 +175,51 @@ redraws the world without changing how it plays. Pixels can come from:
 
 A cartridge does not record where its graphics live, so a plain ROM gives a
 remix rather than a faithful tileset: the importer scores stretches of the file
-for structure that looks like artwork and takes the best one. A profile is how
-that knowledge gets written down and shared. See
+for structure that looks like artwork and takes the best one. The same is true
+of an image: without a profile to say which cell is a bush, the engine can only
+put the picture where the tiles used to be. A profile is how that knowledge
+gets written down and shared. See
 [`docs/profile-format.md`](docs/profile-format.md) and the worked example in
 [`assets/example.zprofile`](assets/example.zprofile).
+
+#### Fitting a picture into four colours a cell
+
+The engine draws four colours per 8x8 cell out of a table of sixteen palettes,
+which is the Game Boy Color's arrangement rather than the Game Boy's one
+palette for everything. Making that pay off is the whole job of the importer,
+and it does it by fitting each cell separately: every cell is asked what four
+colours it would like, those answers are clustered into sixteen palettes, and
+then each cell is given the one it loses the least to. A hillside keeps its
+greens while the path over it keeps its browns, where quantising a whole
+picture at once turns both to mud. A sheet with transparency in it is taken
+for sprites, where the first colour is not a colour at all, so dark outlines
+survive instead of turning see-through.
+
+`zelduh quantise <IMAGE>` writes the picture back out beside the original,
+exactly as the engine would draw it, so the answer to "will this tileset look
+any good" is something to look at rather than argue about.
+
+#### Where to find art that suits it
+
+Free Zelda-like tilesets exist and are worth a look — ArMM1998's
+[Zelda-like tilesets and sprites](https://opengameart.org/content/zelda-like-tilesets-and-sprites)
+on OpenGameArt is CC0 and the best known of them — but there is a catch worth
+knowing before you spend an afternoon on one. They are full-colour 16x16 RPG
+art: terrain, buildings and townspeople. They quantise into this engine
+remarkably well (try `zelduh quantise` on one and see), but they come with no
+monsters, and sixteen palettes cannot hold two art sets at once, so a pack
+either replaces the whole look or none of it. Art authored for a Game Boy —
+two bits a pixel, four colours, 16x16 tiles — needs no fitting at all and
+carries the enemies with it.
+
+So: a ROM you own gives the most faithful result, a CC0 tileset gives a good
+overworld and no monsters, and the art in this repository is the only complete
+set here.
 
 ## Development
 
 ```
-cargo test --workspace          # 231 tests
+cargo test --workspace          # 242 tests
 cargo run -p zelduh-cli -- shot --seed 7 --frames 90 --walk rrrd --out shot.png
 cargo run -p zelduh-cli -- sheet --out sheet.png     # every tile and sprite
 cargo run -p zelduh-cli -- map --seed 7              # a level as text

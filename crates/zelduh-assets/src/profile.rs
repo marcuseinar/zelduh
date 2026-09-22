@@ -101,6 +101,10 @@ pub enum Directive {
     },
 }
 
+/// The palette a cell gets when its line does not name one: whichever the
+/// quantiser fitted that tile to when its image was imported.
+pub const AUTO_PALETTE: u8 = u8::MAX;
+
 /// The result of reading a profile.
 #[derive(Clone, Debug, Default)]
 pub struct Profile {
@@ -124,13 +128,34 @@ impl Profile {
         }
         for (id, meta) in &self.terrain {
             if (*id as usize) < pack.metatiles.len() {
-                pack.metatiles[*id as usize] = *meta;
+                let mut meta = *meta;
+                for c in meta.iter_mut() {
+                    resolve(pack, c);
+                }
+                pack.metatiles[*id as usize] = meta;
             }
         }
         for (id, s) in &self.sprites {
-            pack.sprites[*id as usize] = s.clone();
+            let mut s = s.clone();
+            for c in s.cells.iter_mut() {
+                resolve(pack, c);
+            }
+            pack.sprites[*id as usize] = s;
         }
     }
+}
+
+/// Fills in a cell's palette from the tile it points at, when the profile
+/// left the choice open.
+fn resolve(pack: &AssetPack, cell: &mut Cell) {
+    if cell.palette != AUTO_PALETTE {
+        return;
+    }
+    cell.palette = if cell.is_blank() {
+        0
+    } else {
+        pack.fitted_palette(cell.tile).unwrap_or(0)
+    };
 }
 
 /// Reads a profile. Unknown lines are collected as errors rather than
@@ -145,7 +170,9 @@ pub fn parse(text: &str) -> Profile {
         let mut words: Vec<&str> = line.split_whitespace().collect();
 
         // A trailing `pal=NAME` sets the palette for this line's cells.
-        let mut palette = 0u8;
+        // Without one, each cell keeps whatever palette it was fitted to when
+        // its image was imported.
+        let mut palette = AUTO_PALETTE;
         if let Some(pos) = words.iter().position(|w| w.starts_with("pal=")) {
             let want = words.remove(pos)[4..].to_string();
             match palette_by_name(&want) {

@@ -10,7 +10,9 @@ use std::fmt::Write as _;
 use std::process::ExitCode;
 use std::time::Instant;
 
+use zelduh_assets::image;
 use zelduh_assets::pack::SpriteId;
+use zelduh_assets::palette::rgb_to_abgr;
 use zelduh_assets::{builtin, AssetPack};
 use zelduh_core::button;
 use zelduh_core::level::{ROOM_H, ROOM_W};
@@ -31,6 +33,7 @@ COMMANDS:
     icon      Render an app icon to a PNG
     map       Print a generated level as text
     rom       Report what is inside a Game Boy ROM
+    quantise  Show what an image looks like once the engine has it
     bench     Time the simulation
     help      Show this message
 
@@ -41,7 +44,9 @@ OPTIONS:
     --scale <N>     Pixel scale for PNG output  (default 4)
     --out <PATH>    Where to write the PNG      (default zelduh.png)
     --walk <DIRS>   Buttons to hold while simulating, e.g. rrrduu
-    --rom <PATH>    A ROM to take graphics from
+    --rom <PATH>    A ROM or image to take graphics from; may be repeated
+    --slots <N>     Palettes to fit an image to     (default 16)
+    --sprites       Treat colour 0 as see-through, as sprites do
 ";
 
 fn main() -> ExitCode {
@@ -57,6 +62,7 @@ fn main() -> ExitCode {
         "icon" => cmd_icon(&opts),
         "map" => cmd_map(&opts),
         "rom" => cmd_rom(&opts),
+        "quantise" | "quantize" => cmd_quantise(&opts),
         "bench" => cmd_bench(&opts),
         "help" | "--help" | "-h" => {
             print!("{USAGE}");
@@ -80,7 +86,9 @@ struct Options {
     scale: usize,
     out: String,
     walk: String,
-    rom: Option<String>,
+    rom: Vec<String>,
+    slots: usize,
+    transparent: bool,
     path: Option<String>,
 }
 
@@ -93,7 +101,9 @@ impl Options {
             scale: 4,
             out: "zelduh.png".to_string(),
             walk: String::new(),
-            rom: None,
+            rom: Vec::new(),
+            slots: 16,
+            transparent: false,
             path: None,
         };
         let mut i = 0;
@@ -111,7 +121,9 @@ impl Options {
                 "--scale" => o.scale = value().parse().unwrap_or(4),
                 "--out" => o.out = value(),
                 "--walk" => o.walk = value(),
-                "--rom" => o.rom = Some(value()),
+                "--rom" => o.rom.push(value()),
+                "--slots" => o.slots = value().parse().unwrap_or(16),
+                "--sprites" => o.transparent = true,
                 other if !other.starts_with("--") => o.path = Some(other.to_string()),
                 other => eprintln!("warning: ignoring unknown option {other}"),
             }
@@ -123,7 +135,9 @@ impl Options {
     /// Builds the asset pack, importing a ROM's graphics when one was given.
     fn pack(&self) -> Result<AssetPack, String> {
         let mut pack = builtin::pack();
-        if let Some(path) = &self.rom {
+        // Files are applied in the order given, which is how an image and the
+        // profile that binds it go together.
+        for path in &self.rom {
             let data = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
             let kind = zelduh_assets::sniff(path, &data)
                 .ok_or_else(|| format!("{path}: not a file this engine can read"))?;
@@ -306,8 +320,7 @@ fn cmd_icon(opts: &Options) -> Result<(), String> {
         height: SIZE,
         pixels: vec![0; (SIZE * SIZE) as usize],
     };
-    let background =
-        zelduh_assets::palette::rgb_to_abgr(pack.palette(zelduh_assets::palette::pal::GRASS).0[2]);
+    let background = rgb_to_abgr(pack.palette(zelduh_assets::palette::pal::GRASS).0[2]);
     fb.clear(background);
     let sprite = pack.sprite(SpriteId::HeroDown0).clone();
     zelduh_render::draw_sprite(
@@ -417,7 +430,7 @@ fn cmd_rom(opts: &Options) -> Result<(), String> {
     let path = opts
         .path
         .clone()
-        .or_else(|| opts.rom.clone())
+        .or_else(|| opts.rom.first().cloned())
         .ok_or("usage: zelduh rom <FILE>")?;
     let data = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let info = zelduh_assets::rom::info(&data);
@@ -452,6 +465,78 @@ fn yes_no(b: bool) -> &'static str {
     } else {
         "no"
     }
+}
+
+/// Shows what an image looks like once it is four colours a cell.
+///
+/// The engine draws four colours per 8x8 cell out of sixteen palettes, which
+/// is a real constraint and not one you can judge from the source art. This
+/// writes the picture back out as the engine would draw it, next to the
+/// original, so the answer is something to look at rather than argue about.
+fn cmd_quantise(opts: &Options) -> Result<(), String> {
+    let path = opts
+        .path
+        .as_deref()
+        .ok_or("usage: zelduh quantise <IMAGE> [--slots N] [--out PATH]")?;
+    let data = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    // Only BMP here: in a browser the page hands over pixels the browser
+    // already decoded, so the engine has never needed a PNG decoder.
+    let img = image::decode_bmp(&data)
+        .ok_or_else(|| format!("{path}: not a BMP (the engine reads PNG only in a browser)"))?;
+    let fitted = image::fit_image(
+        &img,
+        image::FitOptions {
+            slots: opts.slots,
+            transparent: opts.transparent,
+        },
+    );
+    let cols = img.width / 8;
+    let rows = img.height / 8;
+    if cols == 0 || rows == 0 {
+        return Err(format!("{path}: smaller than one tile"));
+    }
+
+    // Original on the left, what the engine would draw on the right.
+    let w = cols * 8 * 2 + 8;
+    let h = rows * 8;
+    let mut pixels = vec![rgb_to_abgr(0x101018); w * h];
+    for y in 0..h {
+        for x in 0..cols * 8 {
+            let (r, g, b, a) = img.pixel(x, y);
+            let src = if a < 128 {
+                rgb_to_abgr(0x101018)
+            } else {
+                rgb_to_abgr(((r as u32) << 16) | ((g as u32) << 8) | b as u32)
+            };
+            pixels[y * w + x] = src;
+
+            let cell = (y / 8) * cols + x / 8;
+            let tile = &fitted.tiles[cell];
+            let palette = fitted.table[fitted.palettes[cell] as usize];
+            let index = tile[(y % 8) * 8 + x % 8];
+            pixels[y * w + cols * 8 + 8 + x] = if a < 128 {
+                rgb_to_abgr(0x101018)
+            } else {
+                rgb_to_abgr(palette.color(index))
+            };
+        }
+    }
+
+    let png = png::encode(&pixels, w, h, opts.scale.max(1));
+    std::fs::write(&opts.out, &png).map_err(|e| format!("{}: {e}", opts.out))?;
+    let used: std::collections::BTreeSet<u8> = fitted.palettes.iter().copied().collect();
+    println!(
+        "{}: {}x{} in {} cells, {} of {} palettes used -> {} ({} KiB)",
+        path,
+        img.width,
+        img.height,
+        fitted.tiles.len(),
+        used.len(),
+        fitted.table.len(),
+        opts.out,
+        png.len() / 1024
+    );
+    Ok(())
 }
 
 fn cmd_bench(opts: &Options) -> Result<(), String> {
@@ -559,7 +644,9 @@ mod tests {
             scale: 1,
             out: String::new(),
             walk: "r".to_string(),
-            rom: None,
+            rom: Vec::new(),
+            slots: 16,
+            transparent: false,
             path: None,
         };
         let w = run_world(&o);

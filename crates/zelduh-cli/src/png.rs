@@ -97,25 +97,28 @@ fn encode_indexed(
     let per_byte = 8 / depth as usize;
     let row_bytes = w.div_ceil(per_byte);
 
+    // Packed in a word rather than a byte: at eight bits a pixel the shifts
+    // below are a whole byte wide, which a `u8` cannot hold.
+    let mask = (1u32 << depth) - 1;
     let mut raw = Vec::with_capacity(h * (1 + row_bytes));
     for y in 0..h {
         raw.push(0); // filter: none
-        let mut byte = 0u8;
+        let mut byte = 0u32;
         let mut filled = 0usize;
         for x in 0..w {
             let color = pixels[(y / scale) * width + (x / scale)];
-            let index = palette.iter().position(|c| *c == color).unwrap_or(0) as u8;
-            byte = (byte << depth) | (index & ((1 << depth) - 1));
+            let index = palette.iter().position(|c| *c == color).unwrap_or(0) as u32;
+            byte = (byte << depth) | (index & mask);
             filled += 1;
             if filled == per_byte {
-                raw.push(byte);
+                raw.push(byte as u8);
                 byte = 0;
                 filled = 0;
             }
         }
         if filled > 0 {
             // The last byte of a row is padded on the right.
-            raw.push(byte << (depth as usize * (per_byte - filled)));
+            raw.push((byte << (depth as usize * (per_byte - filled))) as u8);
         }
     }
 
@@ -198,6 +201,34 @@ fn zlib(raw: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Renders an image with `colors` distinct colours and checks it comes
+    /// back out at the expected bit depth.
+    fn roundtrip(colors: usize) -> Vec<u8> {
+        let pixels: Vec<u32> = (0..colors * 4)
+            .map(|i| 0xff00_0000 | (i / 4) as u32)
+            .collect();
+        encode(&pixels, colors * 4, 1, 1)
+    }
+
+    #[test]
+    fn every_palette_size_encodes() {
+        // Seventeen colours is the first that needs eight bits a pixel, where
+        // the packing shift is a whole byte wide.
+        for colors in [1usize, 2, 3, 4, 5, 16, 17, 64, 255, 256] {
+            let png = roundtrip(colors);
+            assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n", "{colors} colours");
+            assert!(
+                png.len() > 60,
+                "{colors} colours produced {} bytes",
+                png.len()
+            );
+        }
+        // More than a palette can hold falls back to full colour.
+        let pixels: Vec<u32> = (0..300u32).map(|i| 0xff00_0000 | i).collect();
+        let png = encode(&pixels, 300, 1, 1);
+        assert_eq!(&png[0..8], b"\x89PNG\r\n\x1a\n");
+    }
 
     #[test]
     fn crc_matches_a_known_value() {
